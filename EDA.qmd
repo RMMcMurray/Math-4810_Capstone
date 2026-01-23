@@ -1,0 +1,222 @@
+---
+title: "EDA"
+author: "Ryan McMurray"
+format:
+  html:
+    toc: true
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+  message: false
+jupyter: python3
+---
+## Import and Clean the Land Sales Data
+```{python}
+# Load data and libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+%pwd
+land_sales_df = pd.read_excel('data/MLS_Land_Sales.xlsm')
+```
+
+```{python}
+def auto_eda(df, target="Sold Price", max_categories=15):
+    print(f"\nDataset shape: {df.shape}\n")
+
+    for col in df.columns:
+        if col == target:
+            continue
+
+        print("="*70)
+        print(f"{col}")
+        print("-"*70)
+
+        series = df[col]
+        missing_pct = series.isna().mean() * 100
+        nunique = series.nunique()
+
+        print(f"Missing: {missing_pct:.1f}% | Unique values: {nunique}")
+
+        # ----------------------
+        # NUMERIC FEATURES
+        # ----------------------
+        if pd.api.types.is_numeric_dtype(series):
+            print(series.describe())
+
+            if target in df.columns and pd.api.types.is_numeric_dtype(df[target]):
+                corr = df[[col, target]].corr().iloc[0,1]
+                print(f"Correlation with {target}: {corr:.3f}")
+
+            # Histogram
+            plt.figure()
+            series.dropna().hist(bins=40)
+            plt.title(f"{col} distribution")
+            plt.xlabel(col)
+            plt.ylabel("Count")
+            plt.show()
+
+            # Boxplot
+            plt.figure()
+            plt.boxplot(series.dropna(), vert=False)
+            plt.title(f"{col} boxplot")
+            plt.xlabel(col)
+            plt.show()
+
+        # ----------------------
+        # CATEGORICAL FEATURES
+        # ----------------------
+        else:
+            if nunique > max_categories:
+                print(f"High cardinality — showing top {max_categories} only")
+
+            vc = series.value_counts().head(max_categories)
+            print(vc)
+
+            plt.figure()
+            vc.plot(kind="bar")
+            plt.title(f"{col} (top categories)")
+            plt.ylabel("Count")
+            plt.xticks(rotation=45, ha="right")
+            plt.tight_layout()
+            plt.show()
+```
+## Land Sales Data
+
+### Columns Before the Clean
+```{python}
+print(list(land_sales_df.columns))
+```
+```{python}
+print(list(land_sales_df.columns))
+
+TARGET = "Sold Price"
+
+# Drops Unwanted Columns
+DROP_COLS = [
+    # IDs / Keys
+    "List Number", "Parcel Number", "Tax Serial #", "Parcel ID Check",
+    "St. #", "Address", "Address 2", "Postal Code",
+
+    # Agents / Agencies / PII
+    "Agency Name", "Agency Phone", "Agency Email",
+    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
+    "Co-Listing Agent",
+    "Selling Agency", "Selling Agency Phone", "Selling Agency Email",
+    "Selling Agent", "Selling Agent Phone", "Selling Agent Email",
+    "Co-Selling Agent", "Owner",
+
+    # URLs / Metadata
+    "Photo URL", "mod_timestamp", "Card Format", "Book Section",
+
+    # Directions / Remarks that are mostly noise
+    "Directions", "Private Remarks",
+
+    # Post-sale info
+    "Sold Date", "Status Change Date", "Withdrawal Date",
+    "Cancel Date", "Fallthrough Date", "Concessions Amount", "Concessions4",
+
+    # Too Complicated to deal with at the moment
+    "End Date", "Marketing Begin Date", "Lot Dimensions", "Rooms",
+    "Features", "Bsmt % Finish", "Public Remarks",
+
+    # Uniform Variables
+    "Delayed Marketing Exempt Listing", # N Only
+    "State/Province", # Utah Only
+    "Status", # C Only
+    "Property Type", # Residential Only
+]
+```
+### Columns After the Clean
+```{python}
+land_sales_clean_df = land_sales_df.drop(columns=[c for c in DROP_COLS if c in land_sales_df.columns])
+```
+### Univariate EDA
+```{python}
+auto_eda(land_sales_clean_df, target="Sold Price")
+```
+### EDA Heatmap
+```{python}
+num_cols = land_sales_clean_df.select_dtypes(include=np.number)
+plt.figure(figsize=(10,8))
+plt.imshow(num_cols.corr(), aspect="auto")
+plt.colorbar()
+plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)
+plt.yticks(range(len(num_cols.columns)), num_cols.columns)
+plt.title("Numeric Feature Correlations")
+plt.show()
+```
+### Quick Thoughts
+Most of the boolean data is unbalanced a lot of the data is dratically skewed to the right. This makes sense beacause mansions dwarf regular houses. As far as heatmap goes the prices are all highly correlated. Anything with the word sqft is correlated with price. Bedrooms and bathrooms correlat with price. Rooms, bathrooms, and sqft all correlate with each other.
+
+## Multi Family EDA
+
+### Columns Preclean
+
+```{python}
+# Load data and display columns
+family_df = pd.read_excel('data/Multi-Family_MLS_Export.xlsm')
+print(list(family_df.columns))
+```
+### Columns Post Clean
+
+```{python}
+# Columns Being Dropped
+DROP_COLS = [
+    # IDs / PII / Agents
+    "List Number", "Agency Name", "Agency Phone", "Agency Email",
+    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
+    "Co-Listing Agent", "Selling Agency", "Selling Agency Phone",
+    "Selling Agency Email", "Selling Agent", "Selling Agent Phone",
+    "Selling Agent Email", "Co-Selling Agent", "St. #", "Street Name",
+    "Street Direction Sfx", "Street Suffix", "Address 2",
+    "Parcel Number", "Owner", "Tax Serial #", "Photo URL",
+    "mod_timestamp", "Card Format", "Book Section", "Directions",
+    "Private Remarks", "Postal Code", 
+
+    # Post Sell
+    "Sold Date", "Status Change Date", "Withdrawal Date",
+    "Cancel Date", "Fallthrough Date", "Concessions Amount",
+    "Sold Price Per/SqFt",
+
+    # Noisy text
+    "Contingent Remarks", "Public Remarks", "Rooms",
+    "Financing Remarks", "Utilities", "Features",
+
+    # Don't Want to fix at the Moment
+    "End Date", "Lot Dimensions", "Marketing Begin Date",
+    "Delayed Marketing Exempt Listing", "Concessions Available",
+
+    # Uniform
+    "Property Type", # MultiFamily Only
+    "Status", # Only C
+    "State/Province", # Only Utah
+    "For Sale or Rent", # All are for sale
+    "Senior Community", # No Senior Community
+    "Listing Type", # All ER
+    "HOA Dues" # All Monthly
+]
+
+family_clean_df = family_df.drop(columns=[c for c in DROP_COLS if c in family_df.columns])
+
+
+print(list(family_clean_df.columns))
+```
+### Univariate Family EDA
+
+```{python}
+auto_eda(family_clean_df, target="Sold Price")
+```
+### Heatmap
+```{python}
+num_cols = family_clean_df.select_dtypes(include=np.number)
+plt.figure(figsize=(10,8))
+plt.imshow(num_cols.corr(), aspect="auto")
+plt.colorbar()
+plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)
+plt.yticks(range(len(num_cols.columns)), num_cols.columns)
+plt.title("Numeric Feature Correlations")
+plt.show()
+```
