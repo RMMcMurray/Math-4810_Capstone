@@ -220,3 +220,98 @@ plt.yticks(range(len(num_cols.columns)), num_cols.columns)
 plt.title("Numeric Feature Correlations")
 plt.show()
 ```
+## Residential Sells
+
+### Preclean
+```{python}
+# Load data and display columns
+res_df = pd.read_excel('data/MLS_Residential_Sales.xlsm')
+print(list(res_df.columns))
+```
+### Postclean
+
+```{python}
+DROP_COLS = [
+    # IDs / PII / Agents / Metadata
+    "List Number","Agency Name","Agency Phone","Agency Email",
+    "Listing Agent","Listing Agent Phone","Listing Agent Email","Co-Listing Agent",
+    "Selling Agency","Selling Agency Phone","Selling Agency Email","Selling Agent",
+    "Selling Agent Phone","Selling Agent Email","Co-Selling Agent","St. #",
+    "Street Name","Street Direction Sfx","Street Suffix","Address 2","Parcel Number",
+    "Owner","Tax Serial #","Photo URL","mod_timestamp","Card Format","Book Section",
+    "Directions","Private Remarks", "Postal Code",
+
+    # Post Sell
+    "Sold Date","Status Change Date","Withdrawal Date","Cancel Date",
+    "Fallthrough Date","Sold Price Per/SqFt","Concessions Amount",
+
+    # Noisy Could Use with work
+    "Contingent Remarks","Public Remarks","Financing Remarks","Utilities","Features", "Rooms",
+
+    # Don't want to fix yet
+    "End Date", "Lot Dimensions", "Marketing Begin Date",
+    "Concessions4",
+
+    # Uniform
+    'Property Type', # Residential Only
+    'Status', # C only
+    'State', # Utah Only
+    "Delayed Marketing Exempt Listing", # N Only 1 missing
+
+
+]
+
+# Drop columns safely
+res_clean_df = res_df.drop(columns=[c for c in DROP_COLS if c in res_df.columns])
+
+# Print Cleaned Columns
+print(list(res_clean_df.columns))
+```
+### Univariate Exploration
+```{python}
+auto_eda(res_clean_df, target="Sold Price")
+```
+### Heatmap
+```{python}
+num_cols = res_clean_df.select_dtypes(include=np.number)
+plt.figure(figsize=(10,8))
+plt.imshow(num_cols.corr(), aspect="auto")
+plt.colorbar()
+plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)
+plt.yticks(range(len(num_cols.columns)), num_cols.columns)
+plt.title("Numeric Feature Correlations")
+plt.show()
+```
+## Prepared Sales
+
+### Preclean
+```{python}
+prepared_df = pd.read_excel("data/MLS_Prepared_Sales_For_PUMA.xlsx")
+print(list(prepared_df.columns))
+```
+### Post Clean
+```{python}
+DROP_COLS = [
+    'MLS #', 'Sold Date', 'Sold Concessions', 'Tax ID', 'Address'
+    ]
+
+prepared_clean_df = prepared_df.drop(columns=[c for c in DROP_COLS if c in prepared_df.columns])
+
+print(list(prepared_clean_df.columns))
+```
+### Univariate EDA
+
+```{python}
+auto_eda(prepared_clean_df, target="Sold Price")
+```
+### Heatmap
+```{python}
+num_cols = prepared_clean_df.select_dtypes(include=np.number)
+plt.figure(figsize=(10,8))
+plt.imshow(num_cols.corr(), aspect="auto")
+plt.colorbar()
+plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)
+plt.yticks(range(len(num_cols.columns)), num_cols.columns)
+plt.title("Numeric Feature Correlations")
+plt.show()
+```
