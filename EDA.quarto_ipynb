@@ -1,0 +1,583 @@
+{
+  "cells": [
+    {
+      "cell_type": "raw",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: EDA\n",
+        "author: Ryan McMurray\n",
+        "format:\n",
+        "  html:\n",
+        "    toc: true\n",
+        "    theme: cosmo\n",
+        "execute:\n",
+        "  echo: false\n",
+        "  warning: false\n",
+        "  message: false\n",
+        "---"
+      ],
+      "id": "96ae9104"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Import and Clean the Land Sales Data"
+      ],
+      "id": "02f5d6c2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Load data and libraries\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "\n",
+        "%pwd\n",
+        "land_sales_df = pd.read_excel('data/MLS_Land_Sales.xlsm')"
+      ],
+      "id": "ecf67c66",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def auto_eda(df, target=\"Sold Price\", max_categories=15):\n",
+        "    print(f\"\\nDataset shape: {df.shape}\\n\")\n",
+        "\n",
+        "    for col in df.columns:\n",
+        "        if col == target:\n",
+        "            continue\n",
+        "\n",
+        "        print(\"=\"*70)\n",
+        "        print(f\"{col}\")\n",
+        "        print(\"-\"*70)\n",
+        "\n",
+        "        series = df[col]\n",
+        "        missing_pct = series.isna().mean() * 100\n",
+        "        nunique = series.nunique()\n",
+        "\n",
+        "        print(f\"Missing: {missing_pct:.1f}% | Unique values: {nunique}\")\n",
+        "\n",
+        "        # ----------------------\n",
+        "        # NUMERIC FEATURES\n",
+        "        # ----------------------\n",
+        "        if pd.api.types.is_numeric_dtype(series):\n",
+        "            print(series.describe())\n",
+        "\n",
+        "            if target in df.columns and pd.api.types.is_numeric_dtype(df[target]):\n",
+        "                corr = df[[col, target]].corr().iloc[0,1]\n",
+        "                print(f\"Correlation with {target}: {corr:.3f}\")\n",
+        "\n",
+        "            # Histogram\n",
+        "            plt.figure()\n",
+        "            series.dropna().hist(bins=40)\n",
+        "            plt.title(f\"{col} distribution\")\n",
+        "            plt.xlabel(col)\n",
+        "            plt.ylabel(\"Count\")\n",
+        "            plt.show()\n",
+        "\n",
+        "            # Boxplot\n",
+        "            plt.figure()\n",
+        "            plt.boxplot(series.dropna(), vert=False)\n",
+        "            plt.title(f\"{col} boxplot\")\n",
+        "            plt.xlabel(col)\n",
+        "            plt.show()\n",
+        "\n",
+        "        # ----------------------\n",
+        "        # CATEGORICAL FEATURES\n",
+        "        # ----------------------\n",
+        "        else:\n",
+        "            if nunique > max_categories:\n",
+        "                print(f\"High cardinality — showing top {max_categories} only\")\n",
+        "\n",
+        "            vc = series.value_counts().head(max_categories)\n",
+        "            print(vc)\n",
+        "\n",
+        "            plt.figure()\n",
+        "            vc.plot(kind=\"bar\")\n",
+        "            plt.title(f\"{col} (top categories)\")\n",
+        "            plt.ylabel(\"Count\")\n",
+        "            plt.xticks(rotation=45, ha=\"right\")\n",
+        "            plt.tight_layout()\n",
+        "            plt.show()"
+      ],
+      "id": "be81ca54",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Land Sales Data\n",
+        "\n",
+        "### Columns Before the Clean"
+      ],
+      "id": "7ceb9982"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "print(list(land_sales_df.columns))"
+      ],
+      "id": "0ddf86f9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "print(list(land_sales_df.columns))\n",
+        "\n",
+        "TARGET = \"Sold Price\"\n",
+        "\n",
+        "# Drops Unwanted Columns\n",
+        "DROP_COLS = [\n",
+        "    # IDs / Keys\n",
+        "    \"List Number\", \"Parcel Number\", \"Tax Serial #\", \"Parcel ID Check\",\n",
+        "    \"St. #\", \"Address\", \"Address 2\", \"Postal Code\",\n",
+        "\n",
+        "    # Agents / Agencies / PII\n",
+        "    \"Agency Name\", \"Agency Phone\", \"Agency Email\",\n",
+        "    \"Listing Agent\", \"Listing Agent Phone\", \"Listing Agent Email\",\n",
+        "    \"Co-Listing Agent\",\n",
+        "    \"Selling Agency\", \"Selling Agency Phone\", \"Selling Agency Email\",\n",
+        "    \"Selling Agent\", \"Selling Agent Phone\", \"Selling Agent Email\",\n",
+        "    \"Co-Selling Agent\", \"Owner\",\n",
+        "\n",
+        "    # URLs / Metadata\n",
+        "    \"Photo URL\", \"mod_timestamp\", \"Card Format\", \"Book Section\",\n",
+        "\n",
+        "    # Directions / Remarks that are mostly noise\n",
+        "    \"Directions\", \"Private Remarks\",\n",
+        "\n",
+        "    # Post-sale info\n",
+        "    \"Sold Date\", \"Status Change Date\", \"Withdrawal Date\",\n",
+        "    \"Cancel Date\", \"Fallthrough Date\", \"Concessions Amount\", \"Concessions4\",\n",
+        "\n",
+        "    # Too Complicated to deal with at the moment\n",
+        "    \"End Date\", \"Marketing Begin Date\", \"Lot Dimensions\", \"Rooms\",\n",
+        "    \"Features\", \"Bsmt % Finish\", \"Public Remarks\",\n",
+        "\n",
+        "    # Uniform Variables\n",
+        "    \"Delayed Marketing Exempt Listing\", # N Only\n",
+        "    \"State/Province\", # Utah Only\n",
+        "    \"Status\", # C Only\n",
+        "    \"Property Type\", # Residential Only\n",
+        "]"
+      ],
+      "id": "5e817d11",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Columns After the Clean"
+      ],
+      "id": "7c100feb"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "land_sales_clean_df = land_sales_df.drop(columns=[c for c in DROP_COLS if c in land_sales_df.columns])"
+      ],
+      "id": "ae8284a8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Univariate EDA"
+      ],
+      "id": "b7d18c10"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "auto_eda(land_sales_clean_df, target=\"Sold Price\")"
+      ],
+      "id": "6a24a26f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### EDA Heatmap"
+      ],
+      "id": "c3d2ea0b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "num_cols = land_sales_clean_df.select_dtypes(include=np.number)\n",
+        "plt.figure(figsize=(10,8))\n",
+        "plt.imshow(num_cols.corr(), aspect=\"auto\")\n",
+        "plt.colorbar()\n",
+        "plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)\n",
+        "plt.yticks(range(len(num_cols.columns)), num_cols.columns)\n",
+        "plt.title(\"Numeric Feature Correlations\")\n",
+        "plt.show()"
+      ],
+      "id": "15185c48",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Quick Thoughts\n",
+        "Most of the boolean data is unbalanced a lot of the data is dratically skewed to the right. This makes sense beacause mansions dwarf regular houses. As far as heatmap goes the prices are all highly correlated. Anything with the word sqft is correlated with price. Bedrooms and bathrooms correlat with price. Rooms, bathrooms, and sqft all correlate with each other.\n",
+        "\n",
+        "## Multi Family EDA\n",
+        "\n",
+        "### Columns Preclean"
+      ],
+      "id": "a3d27cea"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Load data and display columns\n",
+        "family_df = pd.read_excel('data/Multi-Family_MLS_Export.xlsm')\n",
+        "print(list(family_df.columns))"
+      ],
+      "id": "957ed7eb",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Columns Post Clean"
+      ],
+      "id": "3774d025"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Columns Being Dropped\n",
+        "DROP_COLS = [\n",
+        "    # IDs / PII / Agents\n",
+        "    \"List Number\", \"Agency Name\", \"Agency Phone\", \"Agency Email\",\n",
+        "    \"Listing Agent\", \"Listing Agent Phone\", \"Listing Agent Email\",\n",
+        "    \"Co-Listing Agent\", \"Selling Agency\", \"Selling Agency Phone\",\n",
+        "    \"Selling Agency Email\", \"Selling Agent\", \"Selling Agent Phone\",\n",
+        "    \"Selling Agent Email\", \"Co-Selling Agent\", \"St. #\", \"Street Name\",\n",
+        "    \"Street Direction Sfx\", \"Street Suffix\", \"Address 2\",\n",
+        "    \"Parcel Number\", \"Owner\", \"Tax Serial #\", \"Photo URL\",\n",
+        "    \"mod_timestamp\", \"Card Format\", \"Book Section\", \"Directions\",\n",
+        "    \"Private Remarks\", \"Postal Code\", \n",
+        "\n",
+        "    # Post Sell\n",
+        "    \"Sold Date\", \"Status Change Date\", \"Withdrawal Date\",\n",
+        "    \"Cancel Date\", \"Fallthrough Date\", \"Concessions Amount\",\n",
+        "    \"Sold Price Per/SqFt\",\n",
+        "\n",
+        "    # Noisy text\n",
+        "    \"Contingent Remarks\", \"Public Remarks\", \"Rooms\",\n",
+        "    \"Financing Remarks\", \"Utilities\", \"Features\",\n",
+        "\n",
+        "    # Don't Want to fix at the Moment\n",
+        "    \"End Date\", \"Lot Dimensions\", \"Marketing Begin Date\",\n",
+        "    \"Delayed Marketing Exempt Listing\", \"Concessions Available\",\n",
+        "\n",
+        "    # Uniform\n",
+        "    \"Property Type\", # MultiFamily Only\n",
+        "    \"Status\", # Only C\n",
+        "    \"State/Province\", # Only Utah\n",
+        "    \"For Sale or Rent\", # All are for sale\n",
+        "    \"Senior Community\", # No Senior Community\n",
+        "    \"Listing Type\", # All ER\n",
+        "    \"HOA Dues\" # All Monthly\n",
+        "]\n",
+        "\n",
+        "family_clean_df = family_df.drop(columns=[c for c in DROP_COLS if c in family_df.columns])\n",
+        "\n",
+        "\n",
+        "print(list(family_clean_df.columns))"
+      ],
+      "id": "0e9b5f32",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Univariate Family EDA"
+      ],
+      "id": "fe97ff6b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "auto_eda(family_clean_df, target=\"Sold Price\")"
+      ],
+      "id": "fafe1eba",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Heatmap"
+      ],
+      "id": "ffe1305f"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "num_cols = family_clean_df.select_dtypes(include=np.number)\n",
+        "plt.figure(figsize=(10,8))\n",
+        "plt.imshow(num_cols.corr(), aspect=\"auto\")\n",
+        "plt.colorbar()\n",
+        "plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)\n",
+        "plt.yticks(range(len(num_cols.columns)), num_cols.columns)\n",
+        "plt.title(\"Numeric Feature Correlations\")\n",
+        "plt.show()"
+      ],
+      "id": "554518d8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Residential Sells\n",
+        "\n",
+        "### Preclean"
+      ],
+      "id": "c57b9b7f"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Load data and display columns\n",
+        "res_df = pd.read_excel('data/MLS_Residential_Sales.xlsm')\n",
+        "print(list(res_df.columns))"
+      ],
+      "id": "54acb087",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Postclean"
+      ],
+      "id": "fcb61791"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "DROP_COLS = [\n",
+        "    # IDs / PII / Agents / Metadata\n",
+        "    \"List Number\",\"Agency Name\",\"Agency Phone\",\"Agency Email\",\n",
+        "    \"Listing Agent\",\"Listing Agent Phone\",\"Listing Agent Email\",\"Co-Listing Agent\",\n",
+        "    \"Selling Agency\",\"Selling Agency Phone\",\"Selling Agency Email\",\"Selling Agent\",\n",
+        "    \"Selling Agent Phone\",\"Selling Agent Email\",\"Co-Selling Agent\",\"St. #\",\n",
+        "    \"Street Name\",\"Street Direction Sfx\",\"Street Suffix\",\"Address 2\",\"Parcel Number\",\n",
+        "    \"Owner\",\"Tax Serial #\",\"Photo URL\",\"mod_timestamp\",\"Card Format\",\"Book Section\",\n",
+        "    \"Directions\",\"Private Remarks\", \"Postal Code\",\n",
+        "\n",
+        "    # Post Sell\n",
+        "    \"Sold Date\",\"Status Change Date\",\"Withdrawal Date\",\"Cancel Date\",\n",
+        "    \"Fallthrough Date\",\"Sold Price Per/SqFt\",\"Concessions Amount\",\n",
+        "\n",
+        "    # Noisy Could Use with work\n",
+        "    \"Contingent Remarks\",\"Public Remarks\",\"Financing Remarks\",\"Utilities\",\"Features\", \"Rooms\",\n",
+        "\n",
+        "    # Don't want to fix yet\n",
+        "    \"End Date\", \"Lot Dimensions\", \"Marketing Begin Date\",\n",
+        "    \"Concessions4\",\n",
+        "\n",
+        "    # Uniform\n",
+        "    'Property Type', # Residential Only\n",
+        "    'Status', # C only\n",
+        "    'State', # Utah Only\n",
+        "    \"Delayed Marketing Exempt Listing\", # N Only 1 missing\n",
+        "\n",
+        "\n",
+        "]\n",
+        "\n",
+        "# Drop columns safely\n",
+        "res_clean_df = res_df.drop(columns=[c for c in DROP_COLS if c in res_df.columns])\n",
+        "\n",
+        "# Print Cleaned Columns\n",
+        "print(list(res_clean_df.columns))"
+      ],
+      "id": "dfc9201f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Univariate Exploration"
+      ],
+      "id": "a34ea9c2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "auto_eda(res_clean_df, target=\"Sold Price\")"
+      ],
+      "id": "a79a963c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Heatmap"
+      ],
+      "id": "58264609"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "num_cols = res_clean_df.select_dtypes(include=np.number)\n",
+        "plt.figure(figsize=(10,8))\n",
+        "plt.imshow(num_cols.corr(), aspect=\"auto\")\n",
+        "plt.colorbar()\n",
+        "plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)\n",
+        "plt.yticks(range(len(num_cols.columns)), num_cols.columns)\n",
+        "plt.title(\"Numeric Feature Correlations\")\n",
+        "plt.show()"
+      ],
+      "id": "62ea2427",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Prepared Sales\n",
+        "\n",
+        "### Preclean"
+      ],
+      "id": "8e924cbb"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "prepared_df = pd.read_excel(\"data/MLS_Prepared_Sales_For_PUMA.xlsx\")\n",
+        "print(list(prepared_df.columns))"
+      ],
+      "id": "7ab19317",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Post Clean"
+      ],
+      "id": "ba0dc19c"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "DROP_COLS = [\n",
+        "    'MLS #', 'Sold Date', 'Sold Concessions', 'Tax ID', 'Address'\n",
+        "    ]\n",
+        "\n",
+        "prepared_clean_df = prepared_df.drop(columns=[c for c in DROP_COLS if c in prepared_df.columns])\n",
+        "\n",
+        "print(list(prepared_clean_df.columns))"
+      ],
+      "id": "5c791b79",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Univariate EDA"
+      ],
+      "id": "7e1392c2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "auto_eda(prepared_clean_df, target=\"Sold Price\")"
+      ],
+      "id": "4473d077",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Heatmap"
+      ],
+      "id": "25cd4d02"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "num_cols = prepared_clean_df.select_dtypes(include=np.number)\n",
+        "plt.figure(figsize=(10,8))\n",
+        "plt.imshow(num_cols.corr(), aspect=\"auto\")\n",
+        "plt.colorbar()\n",
+        "plt.xticks(range(len(num_cols.columns)), num_cols.columns, rotation=90)\n",
+        "plt.yticks(range(len(num_cols.columns)), num_cols.columns)\n",
+        "plt.title(\"Numeric Feature Correlations\")\n",
+        "plt.show()"
+      ],
+      "id": "0e532033",
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "C:\\Users\\mcmur\\AppData\\Local\\Programs\\Python\\Python313\\share\\jupyter\\kernels\\python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
