@@ -4,6 +4,7 @@ author: "Ryan McMurray"
 format:
   html:
     toc: true
+    toc-depth: 3
     theme: cosmo
 execute:
   echo: false
@@ -115,7 +116,7 @@ DROP_COLS = [
     "Directions", "Private Remarks",
 
     # Post-sale info
-    "Sold Date", "Status Change Date", "Withdrawal Date",
+    "Sold Date", "Status Change Date", "Withdrawal Date", # Bring back concessions and sold date
     "Cancel Date", "Fallthrough Date", "Concessions Amount", "Concessions4",
 
     # Too Complicated to deal with at the moment
@@ -315,3 +316,5 @@ plt.yticks(range(len(num_cols.columns)), num_cols.columns)
 plt.title("Numeric Feature Correlations")
 plt.show()
 ```
+
+To Do: U-map and PCA. What variables are we going to drop?
