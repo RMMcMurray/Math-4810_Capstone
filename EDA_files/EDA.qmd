@@ -116,8 +116,8 @@ DROP_COLS = [
     "Directions", "Private Remarks",
 
     # Post-sale info
-    "Sold Date", "Status Change Date", "Withdrawal Date", # Bring back concessions and sold date
-    "Cancel Date", "Fallthrough Date", "Concessions Amount", "Concessions4",
+    "Status Change Date", "Withdrawal Date", # Bring back concessions and sold date
+    "Cancel Date", "Fallthrough Date", "Concessions4",
 
     # Too Complicated to deal with at the moment
     "End Date", "Marketing Begin Date", "Lot Dimensions", "Rooms",
