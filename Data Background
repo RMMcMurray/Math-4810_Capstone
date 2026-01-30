@@ -1,0 +1,12 @@
+Parcel Export
+Please focus on the second sheet in this workbook. This is a Power Query–based summary of property details pulled from our database and summarized in a way that I believe is meaningful for analysis. We could investigate pulling additional parcel-level variables, or summarizing the same data in different ways, if that would be helpful.
+The best-case scenario would be to use this parcel data from PUMA to predict sales price, since this parcel file represents the population that conclusions drawn from the sales sample would ultimately be applied back to. One challenge, however, is that many sales from the past four years will not perfectly match the current parcel file due to ongoing new construction and property changes over time.
+2022–2025 Multi-Family Sales
+This file is an export from the local MLS showing details provided by real estate agents for multi-family sales. It includes data from outside Iron County. This dataset could be useful, but it may also introduce noise since we do not have corresponding parcel record data to accompany these sales.
+2025 MLS Prepared Sales
+This is a Power Query summary of MLS sales that places them into the correct format for upload into PUMA (our database).
+This is where we will be housing sales data moving forward. The goal is to clean each sale once and then have a single, consistent source that can be pulled from later. This should help resolve issues caused by properties changing over time, since each sale record will be unique and intended to accurately describe the property as it existed at the point in time of sale.
+2025 MLS Residential Sales
+This file is the raw MLS residential sales export, with a few added columns at the end to help clean some of the dirtier data (including concessions). This dataset also includes sales outside of Iron County. Since we are only valuing property inside Iron County and only have parcel record data for Iron County, this data may be more noise than signal—but it could still help provide broader market context. 
+2022–2025 MLS Land Sales
+I accidentally sent the wrong file previously—sorry for the confusion. This file is simply an MLS export of vacant land (or essentially vacant land) sales.
