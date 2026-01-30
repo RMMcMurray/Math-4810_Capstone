@@ -1,0 +1,154 @@
+---
+title: "PCA and Umapp"
+author: "Ryan McMurray"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+  message: false
+jupyter: python3
+---
+
+## Mixed Data PCA (FAMD)
+```{python}
+#| label: FAMD_Adaptive_Drop_Columns
+import pandas as pd
+import prince
+import matplotlib.pyplot as plt
+import numpy as np
+import glob
+import os
+
+# --- Columns to drop per dataset ---
+DROP_COLS_MAP = {
+    "MLS_Land_Sales.csv": [
+        "List Number", "Parcel Number", "Tax Serial #", "Parcel ID Check",
+        "St. #", "Address", "Address 2", "Postal Code",
+        "Agency Name", "Agency Phone", "Agency Email",
+        "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
+        "Co-Listing Agent", "Selling Agency", "Selling Agency Phone",
+        "Selling Agency Email",
+        "Selling Agent", "Selling Agent Phone", "Selling Agent Email",
+        "Co-Selling Agent", "Owner",
+        "Photo URL", "mod_timestamp", "Card Format", "Book Section",
+        "Directions", "Private Remarks",
+        "Status Change Date", "Withdrawal Date", "Cancel Date", "Fallthrough Date",
+        "Concessions4", "End Date", "Marketing Begin Date", "Lot Dimensions",
+        "Rooms", "Features", "Bsmt % Finish", "Public Remarks",
+        "Delayed Marketing Exempt Listing", "State/Province", "Status", "Property Type",
+    ],
+    "MLS_Prepared_Sales_For_PUMA.csv": [
+        'MLS #', 'Sold Date', 'Sold Concessions', 'Tax ID', 'Address'
+    ],
+    "MLS_Residential_Sells.csv": [
+        "List Number","Agency Name","Agency Phone","Agency Email",
+        "Listing Agent","Listing Agent Phone","Listing Agent Email","Co-Listing Agent",
+        "Selling Agency","Selling Agency Phone","Selling Agency Email","Selling Agent",
+        "Selling Agent Phone","Selling Agent Email","Co-Selling Agent","St. #",
+        "Street Name","Street Direction Sfx","Street Suffix","Address 2","Parcel Number",
+        "Owner","Tax Serial #","Photo URL","mod_timestamp","Card Format","Book Section",
+        "Directions","Private Remarks", "Postal Code",
+        "Sold Date","Status Change Date","Withdrawal Date","Cancel Date",
+        "Fallthrough Date","Sold Price Per/SqFt","Concessions Amount",
+        "Contingent Remarks","Public Remarks","Financing Remarks","Utilities","Features","Rooms",
+        "End Date", "Lot Dimensions", "Marketing Begin Date", "Concessions4",
+        'Property Type', 'Status', 'State', "Delayed Marketing Exempt Listing",
+    ],
+    "Multi-Family_MLS_Export.csv": [
+        "List Number", "Agency Name", "Agency Phone", "Agency Email",
+        "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
+        "Co-Listing Agent", "Selling Agency", "Selling Agency Phone", "Selling Agency Email",
+        "Selling Agent", "Selling Agent Phone", "Selling Agent Email", "Co-Selling Agent",
+        "St. #", "Street Name", "Street Direction Sfx", "Street Suffix", "Address 2",
+        "Parcel Number", "Owner", "Tax Serial #", "Photo URL",
+        "mod_timestamp", "Card Format", "Book Section", "Directions",
+        "Private Remarks", "Postal Code",
+        "Sold Date", "Status Change Date", "Withdrawal Date",
+        "Cancel Date", "Fallthrough Date", "Concessions Amount", "Sold Price Per/SqFt",
+        "Contingent Remarks", "Public Remarks", "Rooms",
+        "Financing Remarks", "Utilities", "Features",
+        "End Date", "Lot Dimensions", "Marketing Begin Date",
+        "Delayed Marketing Exempt Listing", "Concessions Available",
+        "Property Type", "Status", "State/Province", "For Sale or Rent",
+        "Senior Community", "Listing Type", "HOA Dues",
+    ]
+}
+
+# --- Adaptive FAMD function with column drop ---
+def run_famd_adaptive_drop(X, filename, var_threshold=0.95, max_components=None):
+    # Drop columns specific to this file
+    drop_cols = DROP_COLS_MAP.get(filename, [])
+    X = X.drop(columns=[col for col in drop_cols if col in X.columns], errors='ignore')
+
+    # --- Standard FAMD preprocessing ---
+    # Parse datetime columns
+    for col in X.columns:
+        if X[col].dtype == "object":
+            try:
+                X[col] = pd.to_datetime(X[col])
+            except:
+                pass
+
+    for col in X.select_dtypes(include="datetime"):
+        X[col + "_year"] = X[col].dt.year
+        X[col + "_month"] = X[col].dt.month
+        X[col + "_day"] = X[col].dt.day
+        X = X.drop(columns=col)
+
+    X_num = X.select_dtypes(include="number").fillna(X.select_dtypes(include="number").mean())
+    X_cat = X.select_dtypes(exclude="number").astype("category").fillna("Missing")
+    X_clean = pd.concat([X_num, X_cat], axis=1)
+
+    if max_components is None:
+        max_components = min(X_clean.shape)
+
+    famd = prince.FAMD(n_components=max_components, n_iter=5, random_state=42)
+    X_famd = famd.fit_transform(X_clean)
+
+    cumvar = np.cumsum(famd.eigenvalues_ / famd.eigenvalues_.sum())
+    n_components_opt = np.searchsorted(cumvar, var_threshold) + 1
+
+    if n_components_opt < max_components:
+        famd = prince.FAMD(n_components=n_components_opt, n_iter=5, random_state=42)
+        X_famd = famd.fit_transform(X_clean)
+
+    return X_famd, famd, n_components_opt, cumvar
+
+# --- Scree plot ---
+def famd_scree_plot(famd, cumvar, title=None):
+    plt.plot(cumvar, marker="o")
+    plt.xlabel("Number of Components")
+    plt.ylabel("Cumulative Explained Variance")
+    if title:
+        plt.title(title)
+    plt.show()
+
+# --- Wrapper for CSV files ---
+def famd_from_csv_drop(filepath, var_threshold=0.95):
+    X = pd.read_csv(filepath)
+    filename = os.path.basename(filepath)
+    print(filename)
+    try:
+        X_famd, famd, n_components_opt, cumvar = run_famd_adaptive_drop(X, filename, var_threshold)
+        print(f"Optimal components for {var_threshold*100:.0f}% variance: {n_components_opt}")
+        print("Explained variance ratio:")
+        print(famd.eigenvalues_ / famd.eigenvalues_.sum())
+        famd_scree_plot(famd, cumvar, title=filename)
+        return X_famd, famd
+    except Exception as e:
+        print(f"Skipping {filename}: {e}")
+        return None
+
+# --- Run for all CSV files ---
+%cd ~\OneDrive\Documents\GitHub\Math-4810_Capstone\data
+csv_files = glob.glob("*.csv")
+results = {f: famd_from_csv_drop(f) for f in csv_files}
+
+```
+
+
+## U-Map
