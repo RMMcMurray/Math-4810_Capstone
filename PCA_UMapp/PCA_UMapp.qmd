@@ -333,6 +333,7 @@ def run_umap_cluster(X, n_neighbors=15, min_dist=0.1, n_components=2, metric='eu
 ## Processing
 ```{python}
 #| label: batch_umap_cluster
+#| cache: true
 results_dict = {}
 
 # Optional: define PCA components per dataset (None = auto based on variance)
@@ -375,4 +376,61 @@ for name, df in datasets.items():
         "features": features,
         "pca_model": pca_model
     }
+```
+
+## Feature Summary
+
+```{python}
+#| label: top_features_summary
+
+def compute_top_features(results_dict, df_dict, top_n_pca=10, top_n_cluster=10):
+    """
+    Computes top features per dataset based on PCA loadings and UMAP cluster correlation.
+    
+    Adds two keys to each dataset in results_dict:
+        - 'top_features_pca': top variables by PCA loadings
+        - 'top_features_cluster': top variables by cluster correlation
+    """
+    
+    for name, result in results_dict.items():
+        print(f"\nDataset: {name}")
+        df = df_dict[name]
+        features = result["features"]
+        pca_model = result["pca_model"]
+        cluster_labels = result["cluster_labels"]
+        
+        # ---- PCA loadings ----
+        loadings = np.abs(pca_model.components_)
+        pca_importance = pd.Series(loadings.sum(axis=0), index=features)
+        pca_importance = pca_importance.sort_values(ascending=False)
+        top_features_pca = pca_importance.head(top_n_pca)
+        
+        # ---- Cluster correlations ----
+        df_num = df.select_dtypes(include=np.number).fillna(df.select_dtypes(include=np.number).median())
+        df_num["cluster"] = cluster_labels
+        
+        cluster_means = df_num.groupby("cluster").mean()
+        overall_mean = df_num.mean()
+        cluster_diff = (cluster_means - overall_mean).abs().sum().sort_values(ascending=False)
+        top_features_cluster = cluster_diff.head(top_n_cluster)
+        
+        # ---- Save to results_dict ----
+        results_dict[name]["top_features_pca"] = top_features_pca
+        results_dict[name]["top_features_cluster"] = top_features_cluster
+        
+        # ---- Optional plots ----
+        fig, axes = plt.subplots(1, 2, figsize=(12,5))
+        top_features_pca.plot.bar(ax=axes[0], color='skyblue')
+        axes[0].set_title(f"{name} - Top PCA Features")
+        axes[0].set_ylabel("Sum of absolute loadings")
+        
+        top_features_cluster.plot.bar(ax=axes[1], color='salmon')
+        axes[1].set_title(f"{name} - Top Cluster Features")
+        axes[1].set_ylabel("Cluster vs overall difference")
+        
+        plt.tight_layout()
+        plt.show()
+
+# ---- Run for all datasets ----
+compute_top_features(results_dict, datasets, top_n_pca=10, top_n_cluster=10)
 ```

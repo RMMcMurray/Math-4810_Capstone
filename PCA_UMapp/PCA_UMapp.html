@@ -92,6 +92,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#pca" id="toc-pca" class="nav-link" data-scroll-target="#pca">PCA</a></li>
   <li><a href="#umap" id="toc-umap" class="nav-link" data-scroll-target="#umap">UMAP</a></li>
   <li><a href="#processing" id="toc-processing" class="nav-link" data-scroll-target="#processing">Processing</a></li>
+  <li><a href="#feature-summary" id="toc-feature-summary" class="nav-link" data-scroll-target="#feature-summary">Feature Summary</a></li>
   </ul>
 </nav>
 </div>
@@ -143,7 +144,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <section id="land-prep" class="level3">
 <h3 class="anchored" data-anchor-id="land-prep">Land Prep</h3>
-<div id="ddfa7709" class="cell" data-cache="true" data-execution_count="2">
+<div id="2614cad6" class="cell" data-cache="true" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Drops Unwanted Columns</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>DROP_COLS <span class="op">=</span> [</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="co"># IDs / Keys</span></span>
@@ -187,7 +188,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="family" class="level3">
 <h3 class="anchored" data-anchor-id="family">Family</h3>
-<div id="a0caacf3" class="cell" data-cache="true" data-execution_count="3">
+<div id="10ba8485" class="cell" data-cache="true" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Columns Being Dropped</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>DROP_COLS <span class="op">=</span> [</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="co"># IDs / PII / Agents</span></span>
@@ -231,7 +232,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="residential" class="level3">
 <h3 class="anchored" data-anchor-id="residential">Residential</h3>
-<div id="953eb617" class="cell" data-cache="true" data-execution_count="4">
+<div id="11b73e5f" class="cell" data-cache="true" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>DROP_COLS <span class="op">=</span> [</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="co"># IDs / PII / Agents / Metadata</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"List Number"</span>,<span class="st">"Agency Name"</span>,<span class="st">"Agency Phone"</span>,<span class="st">"Agency Email"</span>,</span>
@@ -271,7 +272,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="puma" class="level3">
 <h3 class="anchored" data-anchor-id="puma">PUMA</h3>
-<div id="5f78c0cb" class="cell" data-cache="true" data-execution_count="5">
+<div id="4a94683e" class="cell" data-cache="true" data-execution_count="5">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>DROP_COLS <span class="op">=</span> [</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">'MLS #'</span>, <span class="st">'Sold Date'</span>, <span class="st">'Sold Concessions'</span>, <span class="st">'Tax ID'</span>, <span class="st">'Address'</span>, <span class="st">'List Number'</span>, <span class="st">'Photo URL'</span>, <span class="st">'Accessability'</span>, <span class="st">'GLA'</span>, <span class="st">'Adjusted SP'</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    ]</span>
@@ -447,7 +448,7 @@ residential columns:
 </section>
 <section id="processing" class="level2">
 <h2 class="anchored" data-anchor-id="processing">Processing</h2>
-<div id="batch_umap_cluster" class="cell" data-execution_count="10">
+<div id="batch_umap_cluster" class="cell" data-cache="true" data-execution_count="10">
 <div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>results_dict <span class="op">=</span> {}</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional: define PCA components per dataset (None = auto based on variance)</span></span>
@@ -603,6 +604,109 @@ Processing dataset: residential</code></pre>
 <div>
 <figure class="figure">
 <p><img src="PCA_UMapp_files/figure-html/batch_umap_cluster-output-20.png" id="batch_umap_cluster-12" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="feature-summary" class="level2">
+<h2 class="anchored" data-anchor-id="feature-summary">Feature Summary</h2>
+<div id="top_features_summary" class="cell" data-execution_count="11">
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> compute_top_features(results_dict, df_dict, top_n_pca<span class="op">=</span><span class="dv">10</span>, top_n_cluster<span class="op">=</span><span class="dv">10</span>):</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Computes top features per dataset based on PCA loadings and UMAP cluster correlation.</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="co">    </span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Adds two keys to each dataset in results_dict:</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="co">        - 'top_features_pca': top variables by PCA loadings</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="co">        - 'top_features_cluster': top variables by cluster correlation</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> name, result <span class="kw">in</span> results_dict.items():</span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"</span><span class="ch">\n</span><span class="ss">Dataset: </span><span class="sc">{</span>name<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>        df <span class="op">=</span> df_dict[name]</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a>        features <span class="op">=</span> result[<span class="st">"features"</span>]</span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>        pca_model <span class="op">=</span> result[<span class="st">"pca_model"</span>]</span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>        cluster_labels <span class="op">=</span> result[<span class="st">"cluster_labels"</span>]</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a>        <span class="co"># ---- PCA loadings ----</span></span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a>        loadings <span class="op">=</span> np.<span class="bu">abs</span>(pca_model.components_)</span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a>        pca_importance <span class="op">=</span> pd.Series(loadings.<span class="bu">sum</span>(axis<span class="op">=</span><span class="dv">0</span>), index<span class="op">=</span>features)</span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a>        pca_importance <span class="op">=</span> pca_importance.sort_values(ascending<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a>        top_features_pca <span class="op">=</span> pca_importance.head(top_n_pca)</span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a>        <span class="co"># ---- Cluster correlations ----</span></span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a>        df_num <span class="op">=</span> df.select_dtypes(include<span class="op">=</span>np.number).fillna(df.select_dtypes(include<span class="op">=</span>np.number).median())</span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a>        df_num[<span class="st">"cluster"</span>] <span class="op">=</span> cluster_labels</span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a>        cluster_means <span class="op">=</span> df_num.groupby(<span class="st">"cluster"</span>).mean()</span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a>        overall_mean <span class="op">=</span> df_num.mean()</span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a>        cluster_diff <span class="op">=</span> (cluster_means <span class="op">-</span> overall_mean).<span class="bu">abs</span>().<span class="bu">sum</span>().sort_values(ascending<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a>        top_features_cluster <span class="op">=</span> cluster_diff.head(top_n_cluster)</span>
+<span id="cb20-31"><a href="#cb20-31" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-32"><a href="#cb20-32" aria-hidden="true" tabindex="-1"></a>        <span class="co"># ---- Save to results_dict ----</span></span>
+<span id="cb20-33"><a href="#cb20-33" aria-hidden="true" tabindex="-1"></a>        results_dict[name][<span class="st">"top_features_pca"</span>] <span class="op">=</span> top_features_pca</span>
+<span id="cb20-34"><a href="#cb20-34" aria-hidden="true" tabindex="-1"></a>        results_dict[name][<span class="st">"top_features_cluster"</span>] <span class="op">=</span> top_features_cluster</span>
+<span id="cb20-35"><a href="#cb20-35" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-36"><a href="#cb20-36" aria-hidden="true" tabindex="-1"></a>        <span class="co"># ---- Optional plots ----</span></span>
+<span id="cb20-37"><a href="#cb20-37" aria-hidden="true" tabindex="-1"></a>        fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">12</span>,<span class="dv">5</span>))</span>
+<span id="cb20-38"><a href="#cb20-38" aria-hidden="true" tabindex="-1"></a>        top_features_pca.plot.bar(ax<span class="op">=</span>axes[<span class="dv">0</span>], color<span class="op">=</span><span class="st">'skyblue'</span>)</span>
+<span id="cb20-39"><a href="#cb20-39" aria-hidden="true" tabindex="-1"></a>        axes[<span class="dv">0</span>].set_title(<span class="ss">f"</span><span class="sc">{</span>name<span class="sc">}</span><span class="ss"> - Top PCA Features"</span>)</span>
+<span id="cb20-40"><a href="#cb20-40" aria-hidden="true" tabindex="-1"></a>        axes[<span class="dv">0</span>].set_ylabel(<span class="st">"Sum of absolute loadings"</span>)</span>
+<span id="cb20-41"><a href="#cb20-41" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-42"><a href="#cb20-42" aria-hidden="true" tabindex="-1"></a>        top_features_cluster.plot.bar(ax<span class="op">=</span>axes[<span class="dv">1</span>], color<span class="op">=</span><span class="st">'salmon'</span>)</span>
+<span id="cb20-43"><a href="#cb20-43" aria-hidden="true" tabindex="-1"></a>        axes[<span class="dv">1</span>].set_title(<span class="ss">f"</span><span class="sc">{</span>name<span class="sc">}</span><span class="ss"> - Top Cluster Features"</span>)</span>
+<span id="cb20-44"><a href="#cb20-44" aria-hidden="true" tabindex="-1"></a>        axes[<span class="dv">1</span>].set_ylabel(<span class="st">"Cluster vs overall difference"</span>)</span>
+<span id="cb20-45"><a href="#cb20-45" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb20-46"><a href="#cb20-46" aria-hidden="true" tabindex="-1"></a>        plt.tight_layout()</span>
+<span id="cb20-47"><a href="#cb20-47" aria-hidden="true" tabindex="-1"></a>        plt.show()</span>
+<span id="cb20-48"><a href="#cb20-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-49"><a href="#cb20-49" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- Run for all datasets ----</span></span>
+<span id="cb20-50"><a href="#cb20-50" aria-hidden="true" tabindex="-1"></a>compute_top_features(results_dict, datasets, top_n_pca<span class="op">=</span><span class="dv">10</span>, top_n_cluster<span class="op">=</span><span class="dv">10</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset: family</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="PCA_UMapp_files/figure-html/top_features_summary-output-2.png" id="top_features_summary-1" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset: land</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="PCA_UMapp_files/figure-html/top_features_summary-output-4.png" id="top_features_summary-2" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset: puma</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="PCA_UMapp_files/figure-html/top_features_summary-output-6.png" id="top_features_summary-3" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset: residential</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>C:\Users\mcmur\AppData\Local\Temp\ipykernel_24892\1084224937.py:46: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  plt.tight_layout()</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="PCA_UMapp_files/figure-html/top_features_summary-output-9.png" id="top_features_summary-4" class="img-fluid figure-img"></p>
 </figure>
 </div>
 </div>
