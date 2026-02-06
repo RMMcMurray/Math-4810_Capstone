@@ -4,143 +4,375 @@ author: "Ryan McMurray"
 format:
   html:
     toc: true
-    toc-depth: 3
+    toc-depth: 4
     theme: cosmo
 execute:
-  echo: false
-  warning: false
-  message: false
+  echo: true
+  warning: true
+  message: true
 jupyter: python3
 ---
 
-## Mixed Data PCA (FAMD)
+## File Prep
 ```{python}
-#| label: FAMD
-
+#| label: setup
+#| cache: true
 import pandas as pd
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
-import prince
-import glob
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+import umap
+from joblib import Parallel, delayed
 import os
+import hdbscan
 
-plt.rcParams["figure.dpi"] = 120
+# Load datasets
+land = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
+residential = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
+puma = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv")
+family = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/Multi-Family_MLS_Export.csv")
 
-DATA_DIR = r"~\OneDrive\Documents\GitHub\Math-4810_Capstone\data"
+```
 
-def run_famd_auto(X, var_threshold=0.95):
-    # --- Datetime detection (safe, fast) ---
-    for col in X.columns:
-        if X[col].dtype == "object":
-            parsed = pd.to_datetime(X[col], errors="coerce")
-            if parsed.notna().mean() > 0.8:
-                X[col] = parsed
+### Land Prep
+```{python}
+#| cache: true
+# Drops Unwanted Columns
+DROP_COLS = [
+    # IDs / Keys
+    "List Number", "Parcel Number", "Tax Serial #", "Parcel ID Check",
+    "St. #", "Address", "Address 2", "Postal Code", 'Street Name', 'Street Direction Sfx', 'Street Suffix',
 
-    for col in X.select_dtypes(include="datetime"):
-        X[col+"_year"] = X[col].dt.year
-        X[col+"_month"] = X[col].dt.month
-        X[col+"_day"] = X[col].dt.day
-        X = X.drop(columns=col)
+    # Agents / Agencies / PII
+    "Agency Name", "Agency Phone", "Agency Email",
+    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
+    "Co-Listing Agent",
+    "Selling Agency", "Selling Agency Phone", "Selling Agency Email",
+    "Selling Agent", "Selling Agent Phone", "Selling Agent Email",
+    "Co-Selling Agent", "Owner", 'Financing Remarks',
 
-    # --- Numeric ---
-    X_num = X.select_dtypes(include="number")
-    X_num = X_num.fillna(X_num.mean())
+    # URLs / Metadata
+    "Photo URL", "mod_timestamp", "Card Format", "Book Section",
 
-    # Drop zero-variance numeric columns (fixes sklearn warnings)
-    X_num = X_num.loc[:, X_num.std() > 0]
+    # Directions / Remarks that are mostly noise
+    "Directions", "Private Remarks",
 
-    # --- Categorical ---
-    X_cat = X.select_dtypes(exclude="number").copy()
-    for col in X_cat.columns:
-        X_cat[col] = X_cat[col].astype("category")
-        if "Missing" not in X_cat[col].cat.categories:
-            X_cat[col] = X_cat[col].cat.add_categories("Missing")
-        X_cat[col] = X_cat[col].fillna("Missing")
+    # Post-sale info
+    "Status Change Date", "Withdrawal Date",
+    "Cancel Date", "Fallthrough Date", "Concessions4",
 
-    X_clean = pd.concat([X_num, X_cat], axis=1)
+    # Too Complicated to deal with at the moment
+    "End Date", "Marketing Begin Date", "Lot Dimensions", "Rooms",
+    "Features", "Bsmt % Finish", "Public Remarks",
 
-    famd = prince.FAMD(n_components=min(X_clean.shape), random_state=42)
-    X_famd = famd.fit_transform(X_clean)
+    # Uniform Variables
+    "Delayed Marketing Exempt Listing", # N Only
+    "State/Province", # Utah Only
+    "Status", # C Only
+    "Property Type", # Residential Only
 
-    cumvar = np.cumsum(famd.eigenvalues_ / famd.eigenvalues_.sum())
-    k = np.searchsorted(cumvar, var_threshold) + 1
+    # Dates
+    'Listing Date', 'Under Contract Date', 'PUD', 'Sold Date', 'Contingent Remarks'
+]
 
-    famd = prince.FAMD(n_components=k, random_state=42)
-    X_famd = famd.fit_transform(X_clean)
+land = land.drop(columns=[c for c in DROP_COLS if c in land.columns])
+```
 
-    return X_famd, famd, cumvar[:k], X_clean
+### Family
 
+```{python}
+#| cache: true
+# Columns Being Dropped
+DROP_COLS = [
+    # IDs / PII / Agents
+    "List Number", "Agency Name", "Agency Phone", "Agency Email",
+    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
+    "Co-Listing Agent", "Selling Agency", "Selling Agency Phone",
+    "Selling Agency Email", "Selling Agent", "Selling Agent Phone",
+    "Selling Agent Email", "Co-Selling Agent", "St. #", "Street Name",
+    "Street Direction Sfx", "Street Suffix", "Address 2",
+    "Parcel Number", "Owner", "Tax Serial #", "Photo URL",
+    "mod_timestamp", "Card Format", "Book Section", "Directions",
+    "Private Remarks", "Postal Code", 
 
-def famd_scree_plot(cumvar, title):
-    plt.figure()
-    plt.plot(cumvar, marker="o")
-    plt.axhline(0.95, linestyle="--", color="gray")
-    plt.xlabel("Components")
-    plt.ylabel("Cumulative Explained Variance")
-    plt.title(title)
-    plt.show()
-    plt.close()
+    # Post Sell
+    "Status Change Date", "Withdrawal Date", "Cancel Date", "Fallthrough Date", 
+    "Sold Price Per/SqFt",
 
+    # Noisy text
+    "Contingent Remarks", "Public Remarks", "Rooms",
+    "Financing Remarks", "Utilities", "Features",
 
-def famd_heatmap(famd, X_clean, title):
-    loadings = pd.DataFrame(
-        famd.column_correlations(X_clean),
-        index=X_clean.columns,
-        columns=[f"Dim{i+1}" for i in range(famd.n_components)]
+    # Don't Want to fix at the Moment
+    "End Date", "Lot Dimensions", "Marketing Begin Date",
+    "Delayed Marketing Exempt Listing", "Concessions Available",
+
+    # Uniform
+    "Property Type", # MultiFamily Only
+    "Status", # Only C
+    "State/Province", # Only Utah
+    "For Sale or Rent", # All are for sale
+    "Senior Community", # No Senior Community
+    "Listing Type", # All ER
+    "HOA Dues", # All Monthly
+
+    # Dates
+    'Listing Date', 'Sold Date', 'Under Contract Date'
+]
+
+family = family.drop(columns=[c for c in DROP_COLS if c in family.columns])
+
+```
+
+### Residential
+```{python}
+#| cache: true
+DROP_COLS = [
+    # IDs / PII / Agents / Metadata
+    "List Number","Agency Name","Agency Phone","Agency Email",
+    "Listing Agent","Listing Agent Phone","Listing Agent Email","Co-Listing Agent",
+    "Selling Agency","Selling Agency Phone","Selling Agency Email","Selling Agent",
+    "Selling Agent Phone","Selling Agent Email","Co-Selling Agent","St. #",
+    "Street Name","Street Direction Sfx","Street Suffix","Address 2","Parcel Number",
+    "Owner","Tax Serial #","Photo URL","mod_timestamp","Card Format","Book Section",
+    "Directions","Private Remarks", "Postal Code",
+
+    # Post Sell
+    "Sold Date","Status Change Date","Withdrawal Date","Cancel Date",
+    "Fallthrough Date","Sold Price Per/SqFt","Concessions Amount",
+
+    # Noisy Could Use with work
+    "Contingent Remarks","Public Remarks","Financing Remarks","Utilities","Features", "Rooms",
+
+    # Don't want to fix yet
+    "End Date", "Lot Dimensions", "Marketing Begin Date",
+    "Concessions4",
+
+    # Uniform
+    'Property Type', # Residential Only
+    'Status', # C only
+    'State', # Utah Only
+    "Delayed Marketing Exempt Listing", # N Only 1 missing
+
+    'Listing Date', 'Under Contract Date', 'PUD', 'Parcel ID Check', 'Address', 
+    'St. Dir.'
+]
+
+# Drop columns safely
+residential = residential.drop(
+    columns=[c for c in DROP_COLS if c in residential.columns]
     )
-    plt.figure(figsize=(10,6))
-    sns.heatmap(loadings, cmap="coolwarm", center=0)
-    plt.title(title)
-    plt.show()
-    plt.close()
+```
 
+### PUMA
+```{python}
+#| cache: true
+DROP_COLS = [
+    'MLS #', 'Sold Date', 'Sold Concessions', 'Tax ID', 'Address', 'List Number', 'Photo URL', 'Accessability', 'GLA', 'Adjusted SP'
+    ]
 
-# --- Run ---
-os.chdir(os.path.expanduser(DATA_DIR))
-results_famd = {}
+puma = puma.drop(columns=[c for c in DROP_COLS if c in puma.columns])
+```
 
-for f in glob.glob("*.csv"):
-    print(f"\nProcessing {f}")
-    try:
-        X = pd.read_csv(f)
-        X_famd, famd, cumvar, X_clean = run_famd_auto(X)
+```{python}
+#| label: Column Check
+datasets = {
+    "family": family,
+    "land": land,
+    "puma": puma,
+    "residential": residential
+}
 
-        famd_scree_plot(cumvar, f"{f} — Scree Plot")
-        famd_heatmap(famd, X_clean, f"{f} — FAMD Loadings")
+for name, df in datasets.items():
+    print(f"\n{name} columns:")
+    print(df.columns.tolist())
+```
 
-        results_famd[f] = X_famd
-    except Exception as e:
-        print(f"Skipped {f}: {e}")
+## PCA
+```{python}
+#| label: prepare_numeric_matrix
+def prepare_numeric_matrix(df, var_thresh=1e-4):
+    """
+    Converts a dataframe into a numeric matrix for PCA/UMAP:
+    - Fills missing values (median for numeric, 'Missing' for categorical)
+    - One-hot encodes categorical variables
+    - Drops near-zero variance features
+    - Standardizes features
+    """
+    df = df.copy()
+    
+    # Numeric / categorical
+    num = df.select_dtypes(include=np.number).fillna(df.select_dtypes(include=np.number).median())
+    cat = df.select_dtypes(exclude=np.number).fillna("Missing")
+    
+    # One-hot encode categoricals
+    X = pd.get_dummies(pd.concat([num, cat], axis=1), drop_first=True)
+    
+    # Drop near-zero variance
+    variances = X.var()
+    keep_cols = variances[variances > var_thresh].index
+    X = X[keep_cols]
+    
+    # Standardize
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    return X_scaled, X.columns.tolist()
+```
 
+```{python}
+#| label: reduce_with_pca_scree
+def reduce_with_pca(X, n_components=None, variance_threshold=0.9, show_scree=True, title="PCA Scree Plot"):
+    """
+    Reduces dimensionality using PCA and optionally shows scree plots.
+    
+    Parameters:
+    -----------
+    X : array-like
+        Numeric matrix (scaled)
+    n_components : int or None
+        Number of PCA components to keep. If None, use variance_threshold
+    variance_threshold : float
+        Cumulative explained variance ratio threshold if n_components is None
+    show_scree : bool
+        If True, plots scree and cumulative variance plots
+    title : str
+        Title prefix for plots
+    
+    Returns:
+    --------
+    X_pca : ndarray
+        PCA-transformed matrix
+    pca : PCA object
+        Fitted PCA model
+    """
+    
+    # Fit PCA to all components first
+    pca_full = PCA(n_components=None)
+    pca_full.fit(X)
+    
+    evr = pca_full.explained_variance_ratio_
+    cumvar = np.cumsum(evr)
+    
+    # Decide how many components
+    if n_components is None:
+        n_components = np.searchsorted(cumvar, variance_threshold) + 1
+    
+    # Fit PCA with selected components
+    pca = PCA(n_components=n_components)
+    X_pca = pca.fit_transform(X)
+    
+    # Scree plots
+    if show_scree:
+        plt.figure(figsize=(8,4))
+        plt.plot(range(1, len(evr)+1), evr, marker='o')
+        plt.axvline(n_components, linestyle='--', color='red', label=f"{n_components} PCs")
+        plt.xlabel("Principal Component")
+        plt.ylabel("Explained Variance Ratio")
+        plt.title(f"{title} - Scree Plot")
+        plt.legend()
+        plt.show()
+        
+        plt.figure(figsize=(8,4))
+        plt.plot(range(1, len(cumvar)+1), cumvar, marker='o')
+        plt.axhline(variance_threshold, linestyle='--', color='green', label=f"{variance_threshold*100:.0f}% Variance")
+        plt.axvline(n_components, linestyle='--', color='red', label=f"{n_components} PCs")
+        plt.xlabel("Principal Component")
+        plt.ylabel("Cumulative Explained Variance")
+        plt.title(f"{title} - Cumulative Variance")
+        plt.legend()
+        plt.show()
+    
+    return X_pca, pca
 ```
 
 ## UMAP
 ```{python}
-#| label: UMAP_FAMD
+#| label: umap_with_clustering
+def run_umap_cluster(X, n_neighbors=15, min_dist=0.1, n_components=2, metric='euclidean', plot=True, title="UMAP"):
+    """
+    Runs UMAP and HDBSCAN clustering:
+    - Returns embedding coordinates and cluster labels
+    - Plots 2D embedding colored by clusters
+    """
+    # UMAP
+    reducer = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        n_components=n_components,
+        metric=metric,
+        random_state=42
+    )
+    embedding = reducer.fit_transform(X)
+    
+    # HDBSCAN clustering
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=10)
+    labels = clusterer.fit_predict(embedding)
+    
+    # Plot if 2D
+    if plot and n_components == 2:
+        plt.figure(figsize=(8,6))
+        plt.scatter(
+            embedding[:,0],
+            embedding[:,1],
+            c=labels,
+            cmap='Spectral',
+            s=10,
+            alpha=0.7
+        )
+        plt.title(f"{title} (HDBSCAN clusters)")
+        plt.xlabel("UMAP 1")
+        plt.ylabel("UMAP 2")
+        plt.colorbar(label="Cluster")
+        plt.show()
+    
+    return embedding, labels
+```
 
-%matplot inline
+## Processing
+```{python}
+#| label: batch_umap_cluster
+results_dict = {}
 
-import umap
-import matplotlib.pyplot as plt
-import pandas as pd
+# Optional: define PCA components per dataset (None = auto based on variance)
+pca_components = {
+    "family": None,
+    "land": None,
+    "puma": None,
+    "residential": None
+}
 
-plt.rcParams["figure.dpi"] = 120
+for name, df in datasets.items():
+    print(f"\nProcessing dataset: {name}")
 
-def run_umap_plot(X, title):
-    reducer = umap.UMAP(n_neighbors=30, min_dist=0.1, random_state=42)
-    emb = reducer.fit_transform(X)
+    # Prepare numeric matrix
+    X_scaled, features = prepare_numeric_matrix(df)
 
-    plt.figure()
-    plt.scatter(emb[:,0], emb[:,1], s=10, alpha=0.7)
-    plt.xlabel("UMAP1")
-    plt.ylabel("UMAP2")
-    plt.title(title)
-    plt.show()
+    # PCA pre-reduction + scree plots
+    X_pca, pca_model = reduce_with_pca(
+        X_scaled,
+        n_components=pca_components.get(name),
+        variance_threshold=0.9,
+        show_scree=True,
+        title=f"PCA: {name}"
+    )
 
-# --- Run ---
-for fname, X_famd in results_famd.items():
-    print(f"\n UMAP for {fname}")
-    run_umap_plot(X_famd, fname)
+    # UMAP + clustering
+    embedding, labels = run_umap_cluster(
+        X_pca,
+        n_neighbors=20,
+        min_dist=0.1,
+        n_components=2,
+        title=f"UMAP: {name}"
+    )
 
+    results_dict[name] = {
+        "X_scaled": X_scaled,
+        "X_pca": X_pca,
+        "embedding": embedding,
+        "cluster_labels": labels,
+        "features": features,
+        "pca_model": pca_model
+    }
 ```
