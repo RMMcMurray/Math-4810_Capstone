@@ -1,5 +1,5 @@
 ---
-title: "PCA and UMAP"
+title: "Numeric PCA and UMAP"
 author: "Ryan McMurray"
 format:
   html:
@@ -24,156 +24,15 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import umap
-from joblib import Parallel, delayed
 import os
 import hdbscan
 
 # Load datasets
-land = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
-residential = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
-puma = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv")
-family = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/Multi-Family_MLS_Export.csv")
-
-```
-
-### Land Prep
-```{python}
-#| cache: true
-# Drops Unwanted Columns
-DROP_COLS = [
-    # IDs / Keys
-    "List Number", "Parcel Number", "Tax Serial #", "Parcel ID Check",
-    "St. #", "Address", "Address 2", "Postal Code", 'Street Name', 'Street Direction Sfx', 'Street Suffix',
-
-    # Agents / Agencies / PII
-    "Agency Name", "Agency Phone", "Agency Email",
-    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
-    "Co-Listing Agent",
-    "Selling Agency", "Selling Agency Phone", "Selling Agency Email",
-    "Selling Agent", "Selling Agent Phone", "Selling Agent Email",
-    "Co-Selling Agent", "Owner", 'Financing Remarks',
-
-    # URLs / Metadata
-    "Photo URL", "mod_timestamp", "Card Format", "Book Section",
-
-    # Directions / Remarks that are mostly noise
-    "Directions", "Private Remarks",
-
-    # Post-sale info
-    "Status Change Date", "Withdrawal Date",
-    "Cancel Date", "Fallthrough Date", "Concessions4",
-
-    # Too Complicated to deal with at the moment
-    "End Date", "Marketing Begin Date", "Lot Dimensions", "Rooms",
-    "Features", "Bsmt % Finish", "Public Remarks",
-
-    # Uniform Variables
-    "Delayed Marketing Exempt Listing", # N Only
-    "State/Province", # Utah Only
-    "Status", # C Only
-    "Property Type", # Residential Only
-
-    # Dates
-    'Listing Date', 'Under Contract Date', 'PUD', 'Sold Date', 'Contingent Remarks'
-]
-
-land = land.drop(columns=[c for c in DROP_COLS if c in land.columns])
-```
-
-### Family
-
-```{python}
-#| cache: true
-# Columns Being Dropped
-DROP_COLS = [
-    # IDs / PII / Agents
-    "List Number", "Agency Name", "Agency Phone", "Agency Email",
-    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
-    "Co-Listing Agent", "Selling Agency", "Selling Agency Phone",
-    "Selling Agency Email", "Selling Agent", "Selling Agent Phone",
-    "Selling Agent Email", "Co-Selling Agent", "St. #", "Street Name",
-    "Street Direction Sfx", "Street Suffix", "Address 2",
-    "Parcel Number", "Owner", "Tax Serial #", "Photo URL",
-    "mod_timestamp", "Card Format", "Book Section", "Directions",
-    "Private Remarks", "Postal Code", 
-
-    # Post Sell
-    "Status Change Date", "Withdrawal Date", "Cancel Date", "Fallthrough Date", 
-    "Sold Price Per/SqFt",
-
-    # Noisy text
-    "Contingent Remarks", "Public Remarks", "Rooms",
-    "Financing Remarks", "Utilities", "Features",
-
-    # Don't Want to fix at the Moment
-    "End Date", "Lot Dimensions", "Marketing Begin Date",
-    "Delayed Marketing Exempt Listing", "Concessions Available",
-
-    # Uniform
-    "Property Type", # MultiFamily Only
-    "Status", # Only C
-    "State/Province", # Only Utah
-    "For Sale or Rent", # All are for sale
-    "Senior Community", # No Senior Community
-    "Listing Type", # All ER
-    "HOA Dues", # All Monthly
-
-    # Dates
-    'Listing Date', 'Sold Date', 'Under Contract Date'
-]
-
-family = family.drop(columns=[c for c in DROP_COLS if c in family.columns])
-
-```
-
-### Residential
-```{python}
-#| cache: true
-DROP_COLS = [
-    # IDs / PII / Agents / Metadata
-    "List Number","Agency Name","Agency Phone","Agency Email",
-    "Listing Agent","Listing Agent Phone","Listing Agent Email","Co-Listing Agent",
-    "Selling Agency","Selling Agency Phone","Selling Agency Email","Selling Agent",
-    "Selling Agent Phone","Selling Agent Email","Co-Selling Agent","St. #",
-    "Street Name","Street Direction Sfx","Street Suffix","Address 2","Parcel Number",
-    "Owner","Tax Serial #","Photo URL","mod_timestamp","Card Format","Book Section",
-    "Directions","Private Remarks", "Postal Code",
-
-    # Post Sell
-    "Sold Date","Status Change Date","Withdrawal Date","Cancel Date",
-    "Fallthrough Date","Sold Price Per/SqFt","Concessions Amount",
-
-    # Noisy Could Use with work
-    "Contingent Remarks","Public Remarks","Financing Remarks","Utilities","Features", "Rooms",
-
-    # Don't want to fix yet
-    "End Date", "Lot Dimensions", "Marketing Begin Date",
-    "Concessions4",
-
-    # Uniform
-    'Property Type', # Residential Only
-    'Status', # C only
-    'State', # Utah Only
-    "Delayed Marketing Exempt Listing", # N Only 1 missing
-
-    'Listing Date', 'Under Contract Date', 'PUD', 'Parcel ID Check', 'Address', 
-    'St. Dir.'
-]
-
-# Drop columns safely
-residential = residential.drop(
-    columns=[c for c in DROP_COLS if c in residential.columns]
-    )
-```
-
-### PUMA
-```{python}
-#| cache: true
-DROP_COLS = [
-    'MLS #', 'Sold Date', 'Sold Concessions', 'Tax ID', 'Address', 'List Number', 'Photo URL', 'Accessability', 'GLA', 'Adjusted SP'
-    ]
-
-puma = puma.drop(columns=[c for c in DROP_COLS if c in puma.columns])
+land = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv").select_dtypes(include=['number'])
+residential = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv").select_dtypes(include=['number'])
+puma = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv").select_dtypes(include=['number'])
+family = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/Multi-Family_MLS_Export.csv").select_dtypes(include=['number'])
+parcel = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/parcel_export.csv").select_dtypes(include=['number'])
 ```
 
 ```{python}
@@ -182,6 +41,7 @@ datasets = {
     "family": family,
     "land": land,
     "puma": puma,
+#    "parcel": parcel,
     "residential": residential
 }
 
@@ -196,26 +56,22 @@ for name, df in datasets.items():
 def prepare_numeric_matrix(df, var_thresh=1e-4):
     """
     Converts a dataframe into a numeric matrix for PCA/UMAP:
-    - Fills missing values (median for numeric, 'Missing' for categorical)
-    - One-hot encodes categorical variables
-    - Drops near-zero variance features
+    - Isolates numeric types
+    - Fills missing values with 0 (Standard for PCA)
+    - Drops columns with near-zero variance
     - Standardizes features
     """
-    df = df.copy()
+    # 1. Select only numeric columns and handle NaNs
+    # This addresses your "FIX THIS" note
+    X = df.select_dtypes(include=[np.number]).fillna(0)
     
-    # Numeric / categorical FIX THIS
-    num = df.select_dtypes(include=np.number).fillna(df.select_dtypes(include=np.number).median())
-    cat = df.select_dtypes(exclude=np.number).fillna("Missing")
-    
-    # One-hot encode categoricals
-    X = pd.get_dummies(pd.concat([num, cat], axis=1), drop_first=True)
-    
-    # Drop near-zero variance
+    # 2. Drop near-zero variance features
+    # If a column doesn't change, it adds no information to PCA/UMAP
     variances = X.var()
     keep_cols = variances[variances > var_thresh].index
     X = X[keep_cols]
     
-    # Standardize
+    # 3. Standardize (Crucial for PCA! It's sensitive to scale)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
@@ -303,6 +159,7 @@ def run_umap_cluster(X, n_neighbors=15, min_dist=0.1, n_components=2, metric='eu
         min_dist=min_dist,
         n_components=n_components,
         metric=metric,
+        low_memory=True,
         random_state=42
     )
     embedding = reducer.fit_transform(X)
@@ -337,7 +194,6 @@ def run_umap_cluster(X, n_neighbors=15, min_dist=0.1, n_components=2, metric='eu
 #| cache: true
 results_dict = {}
 
-# Optional: define PCA components per dataset (None = auto based on variance)
 pca_components = {
     "family": None,
     "land": None,
@@ -364,7 +220,7 @@ for name, df in datasets.items():
     embedding, labels = run_umap_cluster(
         X_pca,
         n_neighbors=20,
-        min_dist=0.1,
+        min_dist=0.25,
         n_components=2,
         title=f"UMAP: {name}"
     )
