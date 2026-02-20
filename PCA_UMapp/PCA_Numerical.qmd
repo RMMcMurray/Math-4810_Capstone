@@ -28,20 +28,14 @@ import os
 import hdbscan
 
 # Load datasets
-land = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv").select_dtypes(include=['number'])
 residential = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv").select_dtypes(include=['number'])
 puma = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv").select_dtypes(include=['number'])
-family = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/Multi-Family_MLS_Export.csv").select_dtypes(include=['number'])
-parcel = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/parcel_export.csv").select_dtypes(include=['number'])
 ```
 
 ```{python}
 #| label: Column Check
 datasets = {
-    "family": family,
-    "land": land,
     "puma": puma,
-#    "parcel": parcel,
     "residential": residential
 }
 

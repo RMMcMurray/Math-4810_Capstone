@@ -8,7 +8,7 @@ format:
     theme: cosmo
     embed-resources: true
 execute:
-  echo: true
+  echo: false
   warning: true
   message: true
 jupyter: python3
@@ -29,101 +29,8 @@ import os
 import hdbscan
 
 # Load datasets
-land = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
 residential = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
 puma = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv")
-family = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/Multi-Family_MLS_Export.csv")
-
-```
-
-### Land Prep
-```{python}
-#| cache: true
-# Drops Unwanted Columns
-DROP_COLS = [
-    # IDs / Keys
-    "List Number", "Parcel Number", "Tax Serial #", "Parcel ID Check",
-    "St. #", "Address", "Address 2", "Postal Code", 'Street Name', 'Street Direction Sfx', 'Street Suffix',
-
-    # Agents / Agencies / PII
-    "Agency Name", "Agency Phone", "Agency Email",
-    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
-    "Co-Listing Agent",
-    "Selling Agency", "Selling Agency Phone", "Selling Agency Email",
-    "Selling Agent", "Selling Agent Phone", "Selling Agent Email",
-    "Co-Selling Agent", "Owner", 'Financing Remarks',
-
-    # URLs / Metadata
-    "Photo URL", "mod_timestamp", "Card Format", "Book Section",
-
-    # Directions / Remarks that are mostly noise
-    "Directions", "Private Remarks",
-
-    # Post-sale info
-    "Status Change Date", "Withdrawal Date",
-    "Cancel Date", "Fallthrough Date", "Concessions4",
-
-    # Too Complicated to deal with at the moment
-    "End Date", "Marketing Begin Date", "Lot Dimensions", "Rooms",
-    "Features", "Bsmt % Finish", "Public Remarks",
-
-    # Uniform Variables
-    "Delayed Marketing Exempt Listing", # N Only
-    "State/Province", # Utah Only
-    "Status", # C Only
-    "Property Type", # Residential Only
-
-    # Dates
-    'Listing Date', 'Under Contract Date', 'PUD', 'Sold Date', 'Contingent Remarks'
-]
-
-land = land.drop(columns=[c for c in DROP_COLS if c in land.columns])
-```
-
-### Family
-
-```{python}
-#| cache: true
-# Columns Being Dropped
-DROP_COLS = [
-    # IDs / PII / Agents
-    "List Number", "Agency Name", "Agency Phone", "Agency Email",
-    "Listing Agent", "Listing Agent Phone", "Listing Agent Email",
-    "Co-Listing Agent", "Selling Agency", "Selling Agency Phone",
-    "Selling Agency Email", "Selling Agent", "Selling Agent Phone",
-    "Selling Agent Email", "Co-Selling Agent", "St. #", "Street Name",
-    "Street Direction Sfx", "Street Suffix", "Address 2",
-    "Parcel Number", "Owner", "Tax Serial #", "Photo URL",
-    "mod_timestamp", "Card Format", "Book Section", "Directions",
-    "Private Remarks", "Postal Code", 
-
-    # Post Sell
-    "Status Change Date", "Withdrawal Date", "Cancel Date", "Fallthrough Date", 
-    "Sold Price Per/SqFt",
-
-    # Noisy text
-    "Contingent Remarks", "Public Remarks", "Rooms",
-    "Financing Remarks", "Utilities", "Features",
-
-    # Don't Want to fix at the Moment
-    "End Date", "Lot Dimensions", "Marketing Begin Date",
-    "Delayed Marketing Exempt Listing", "Concessions Available",
-
-    # Uniform
-    "Property Type", # MultiFamily Only
-    "Status", # Only C
-    "State/Province", # Only Utah
-    "For Sale or Rent", # All are for sale
-    "Senior Community", # No Senior Community
-    "Listing Type", # All ER
-    "HOA Dues", # All Monthly
-
-    # Dates
-    'Listing Date', 'Sold Date', 'Under Contract Date'
-]
-
-family = family.drop(columns=[c for c in DROP_COLS if c in family.columns])
-
 ```
 
 ### Residential
@@ -179,8 +86,6 @@ puma = puma.drop(columns=[c for c in DROP_COLS if c in puma.columns])
 ```{python}
 #| label: Column Check
 datasets = {
-    "family": family,
-    "land": land,
     "puma": puma,
     "residential": residential
 }

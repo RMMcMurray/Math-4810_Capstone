@@ -1,0 +1,296 @@
+---
+title: "Numerical PCA and UMAP Analysis"
+author: "Ryan McMurray"
+format:
+  revealjs:
+    theme: moon
+    slide-number: true
+    width: 1600
+    height: 900
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+jupyter: python3
+---
+# Setup
+
+```{python}
+#| label: setup
+#| cache: true
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import umap
+import hdbscan
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+# 1. Load data
+res_df = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv").select_dtypes(include=['number'])
+puma_df = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv").select_dtypes(include=['number'])
+
+# 2. Separate data - FIXED puma_target reference
+res_target = res_df['Sold Price'] 
+puma_target = puma_df['Sold Price'] 
+
+# 3. Drop target-leakage columns
+res_features = res_df.drop(columns=['Sold Price', 'List Price', 'Original List Price'])
+puma_features = puma_df.drop(columns=['Sold Price', 'Adjusted SP'])
+
+def get_scaled_data(df):
+    X = df.fillna(0)
+    X = X.loc[:, X.var() > 1e-4]
+    return StandardScaler().fit_transform(X)
+
+def plot_scree(scaled_data, title):
+    pca = PCA().fit(scaled_data)
+    cum_var = np.cumsum(pca.explained_variance_ratio_)
+    plt.figure(figsize=(10, 4))
+    plt.plot(range(1, len(cum_var) + 1), cum_var, marker='o', color='magenta')
+    plt.axhline(y=0.9, color='white', linestyle='--', label='90% Variance')
+    plt.title(f"{title} - Cumulative Explained Variance")
+    plt.ylabel("Cumulative Variance")
+    plt.legend()
+    plt.show()
+
+import matplotlib.colors as colors
+
+def plot_umap(scaled_data, target, nn, md, title):
+    pca_data = PCA(n_components=0.9).fit_transform(scaled_data)
+    reducer = umap.UMAP(n_neighbors=nn, min_dist=md, random_state=42)
+    embedding = reducer.fit_transform(pca_data)
+    
+    plt.figure(figsize=(10, 6))
+    
+    # We use LogNorm to stretch the color distribution
+    # We use target.clip(lower=1) to avoid log(0) errors
+    scatter = plt.scatter(embedding[:,0], embedding[:,1], 
+                         c=target, 
+                         norm=colors.LogNorm(vmin=target.min()+1, vmax=target.max()),
+                         cmap='viridis', s=10, alpha=0.6)
+    
+    plt.title(f"{title} Projection (Log-Scaled Colors)")
+    plt.colorbar(scatter, label="Sold Price ($)")
+    plt.show()
+
+def plot_price_correlation(df_features, target_series, title):
+    # Only look at the columns that actually have data variation
+    kept_columns = df_features.columns[df_features.fillna(0).var() > 1e-4]
+    temp_df = df_features[kept_columns].copy()
+    temp_df['Sold Price'] = target_series
+    
+    corrs = temp_df.corr()['Sold Price'].sort_values(ascending=False).drop('Sold Price').head(10)
+    
+    plt.figure(figsize=(10, 5))
+    corrs.plot.bar(color='gold')
+    plt.title(f"Top Features Driving Sold Price: {title}")
+    plt.show()
+
+def plot_feature_importance(df_features, scaled_data, title):
+    """Shows which variables define the PCA space, matching cleaned column counts."""
+    # 1. Identify which columns were actually kept (non-zero variance)
+    # This ensures the index (32) matches the values (25)
+    kept_columns = df_features.columns[df_features.fillna(0).var() > 1e-4]
+    
+    # 2. Run PCA
+    pca = PCA(n_components=0.9).fit(scaled_data)
+    loadings = np.abs(pca.components_)
+    
+    # 3. Create Series with the correct matching length
+    pca_importance = pd.Series(
+        loadings.sum(axis=0), 
+        index=kept_columns
+    ).sort_values(ascending=False).head(10)
+
+    # 4. Plot
+    plt.figure(figsize=(10, 5))
+    pca_importance.plot.bar(color='skyblue')
+    plt.title(f"Top 10 Features Defining the Data Structure: {title}")
+    plt.ylabel("Sum of Absolute PCA Loadings")
+    plt.xticks(rotation=45, ha='right')
+    plt.show()
+
+def plot_umap_natural(scaled_data, nn, md, title):
+    pca_data = PCA(n_components=0.9).fit_transform(scaled_data)
+    reducer = umap.UMAP(n_neighbors=nn, min_dist=md, random_state=42)
+    embedding = reducer.fit_transform(pca_data)
+    
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=100)
+    labels = clusterer.fit_predict(embedding)
+    
+    plt.figure(figsize=(10, 6))
+    plt.scatter(embedding[:,0], embedding[:,1], c=labels, cmap='Spectral', s=10, alpha=0.8)
+    plt.title(f"{title} - Natural Clusters")
+    plt.colorbar(label="Cluster ID")
+    plt.show()
+    
+    return labels
+
+def get_detailed_summary(df_original, cluster_labels, title):
+    """
+    Creates a summary table for clusters using the most important features.
+    """
+    # 1. Attach labels to the original data
+    temp_df = df_original.copy()
+    temp_df['Cluster'] = cluster_labels
+    
+    # 2. Identify the top features based on correlation to Sold Price
+    # This ensures we aren't looking at "boring" constant columns
+    corrs = temp_df.corr()['Sold Price'].abs().sort_values(ascending=False)
+    # Get the top 8 features (excluding Sold Price itself)
+    top_features = corrs.index[1:9].tolist()
+    
+    # 3. Group and calculate means
+    cols_to_summarize = ['Sold Price'] + top_features
+    summary = temp_df[temp_df['Cluster'] != -1].groupby('Cluster')[cols_to_summarize].mean()
+    
+    return summary.round(2)
+
+# Prepare scaled data
+res_scaled = get_scaled_data(res_features)
+puma_scaled = get_scaled_data(puma_features)
+```
+
+## Kept Columns 
+
+I am only keeping numeric columns. I have also dropped the following for being too noisy:
+
+- 'List Price'
+- 'Original List Price'
+- 'Adjusted SP' 
+
+# Residential Analysis
+
+## Res Scree Plots
+```{python}
+#| label: res_scree
+plot_scree(res_scaled, "Residential")
+```
+
+## Res Price Correlation
+```{python}
+#| label: res_price_drivers
+plot_price_correlation(res_features, res_target, "Residential")
+```
+
+## Res Local Structure
+::: {layout-ncol=2}
+```{python}
+#| label: res_local_structure
+#| cache: true
+res_l_labels = plot_umap_natural(res_scaled, 15, 0.01, "Natural")
+```
+```{python}
+plot_umap(res_scaled, res_target, 15, 0.01, "Price")
+```
+
+:::
+
+::: {style="font-size: 0.6em;"}
+
+## Res Local UMAP Cluster
+```{python}
+#| label: res_local_breakdown
+res_local_summary = get_detailed_summary(res_df, res_l_labels, "Residential Local")
+res_local_summary
+```
+
+:::
+
+## Res Global Trends
+::: {layout-ncol=2}
+```{python}
+#| label: res_global_trends
+#| cache: true
+res_g_labels = plot_umap_natural(res_scaled, 50, 0.1, "Natural")
+```
+```{python}
+plot_umap(res_scaled, res_target, 50, 0.1, "Price")
+```
+
+:::
+
+::: {style="font-size: 0.65em;"}
+
+## Res Global UMAP Cluster
+```{python}
+#| label: res_global_breakdown
+res_global_summary = get_detailed_summary(res_df, res_g_labels, "Residential global")
+res_global_summary
+```
+
+:::
+
+## Residential Feature Importance
+```{python}
+#| label: res_feature_importance
+#| cache: true
+
+plot_feature_importance(res_features, res_scaled, "Residential")
+```
+
+# PUMA Analysis
+
+## PUMA Scree
+
+```{python}
+#| label: PUMA_Scree
+plot_scree(puma_scaled, "PUMA")
+```
+
+## PUMA Price Correlation
+
+```{python}
+#| label: puma_price_drivers
+plot_price_correlation(puma_features, puma_target, "PUMA")
+```
+
+##  PUMA Local Structure
+::: {layout-ncol=2}
+```{python}
+#| label: puma_local_structure
+#| cache: true
+puma_l_labels = plot_umap_natural(puma_scaled, 15, 0.01, "Natural")
+```
+```{python}
+plot_umap(puma_scaled, puma_target, 15, 0.01, "PUMA - High Detail")
+```
+
+:::
+## PUMA Local UMAP Cluster
+```{python}
+#| label: puma_local_breakdown
+puma_local_summary = get_detailed_summary(puma_df, puma_l_labels, "PUMA Local")
+puma_local_summary
+```
+
+## PUMA Global Structure
+::: {layout-ncol=2}
+```{python}
+#| label: puma_global
+#| cache: true
+puma_g_labels = plot_umap_natural(puma_scaled, 50, 0.1, "Natural")
+```
+```{python}
+plot_umap(puma_scaled, puma_target, 50, 0.1, "PUMA - Broad View")
+```
+
+:::
+
+## PUMA Global UMAP Cluster
+```{python}
+#| label: puma_global_breakdown
+puma_global_summary = get_detailed_summary(puma_df, puma_g_labels, "PUMA global")
+puma_global_summary
+```
+
+## PUMA Feature Importance
+```{python}
+#| label: puma_feature_importance
+#| cache: true
+
+plot_feature_importance(puma_features, puma_scaled, "PUMA")
+```
