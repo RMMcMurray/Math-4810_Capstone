@@ -1,13 +1,11 @@
 ---
-title: "**PCA**"
-format: 
-    html:
-        embed-resources: true
+format: revealjs
 urlcolor: blue
 engine: jupyter3
 execute: 
   eval: true
   echo: true
+  cache: true
 editor_options: 
   chunk_output_type: console
 ---
@@ -18,6 +16,7 @@ editor_options:
 
 import pandas as pd
 import numpy as np
+from pandas.core.common import random_state
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn
@@ -35,7 +34,7 @@ that best case scenario this is the data used to predict with. While he had ment
 that some of the data is out of date, I wanted to see what insights could be pulled from 
 this first, then work with the other datasets later on as we get a better understanding 
 of the data. 
-
+##
 ```{python}
 #| label: Read in Parcel Export Sheet 2
 #| cache: true
@@ -46,7 +45,7 @@ parcel_export.shape # (53277, 53)
 parcel_export.info()
 
 ```
-
+##
 ```{python}
 #| label: Non-numeric columns
 #| cache: true
@@ -57,7 +56,7 @@ parcel_export[non_numeric_cols].info()
 parcel_export[non_numeric_cols].columns
 
 ```
-
+##
 ```{python}
 #| label: Numeric columns
 #| cache: true
@@ -68,7 +67,7 @@ parcel_export[numeric_cols].info()
 parcel_export[numeric_cols].columns
 
 ```
-
+##
 ```{python}
 #| label: Numeric Column Adjustment
 
@@ -79,14 +78,14 @@ numeric_cols = [c for c in parcel_export.columns if c not in non_numeric_cols]
 parcel_export[numeric_cols].shape # (53277, 31)
 
 ```
-
+##
 ```{python}
 #| label: Fill in NAs for numeric columns with 0
 
 parcel_export[numeric_cols] = parcel_export[numeric_cols].fillna(0)
 
 ```
-
+##
 ```{python}
 #| label: Filter Parcel Export for PCA (only numeric columns)
 #| cache: true
@@ -97,7 +96,7 @@ numeric_parcel_data.shape # (53277, 24)
 numeric_parcel_data.info()
 
 ```
-
+##
 ```{python}
 #| label: Perform Transformations
 
@@ -143,7 +142,7 @@ def normalize(df):
 df_competition = normalize(numeric_parcel_data)
 
 ```
-
+##
 ```{python}
 #| label: Scaling the data for PCA
 #| cache: true
@@ -152,10 +151,7 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(df_competition)
 
 ```
-
-::: {.panel-tabset}
-## Quantile Transformed Data
-
+##
 ```{python}
 #| label: PCA and Scree Plot
 #| cache: true
@@ -164,6 +160,7 @@ pca_full = PCA(n_components=None) # n_components=None keeps all features as comp
 pca_full.fit(X_scaled)
 
 ```
+##
 ```{python}
 #| label: Scree Plot to optimize number of components
 #| cache: true
@@ -179,6 +176,7 @@ plt.grid()
 plt.show()
 
 ```
+##
 ```{python}
 #| label: PCA with 13 components
 #| cache: true
@@ -192,14 +190,14 @@ pca_df = pd.DataFrame(data=principal_components, columns=[
 pca.explained_variance_ratio_.sum()
 
 ```
-
+##
 ```{python}
 #| label: Loading Matrix
 
 loadings = pd.DataFrame(
     pca.components_.T, 
     columns=[f'PC{i+1}' for i in range(pca.n_components_)], 
-    index=X_scaled.columns
+    index=df_competition.columns
 )
 
 plt.figure(figsize=(12, 8))
@@ -211,25 +209,34 @@ plt.ylabel('Original Features')
 plt.show()
 
 ```
-
+##
 ```{python}
-#| umap creation
+#| label: umap settings
+
 reducer = umap.UMAP(
-    n_neighbors=10, 
-    min_dist=0.5, 
+    n_neighbors=50, 
+    min_dist=0.01, 
     random_state=42
 )
-umap_embeddings = reducer.fit_transform(pca_df)
+
 ```
+##
 ```{python}
-#| identify number of clusters
+#| label: UMAP
+
+umap_embeddings = reducer.fit_transform(pca_df)
+
+```
+##
+```{python}
+#| label: identify number of clusters
 
 inertia = []
 k_range = range(1, 11) 
 
 for k in k_range:
     kmeans_test = KMeans(n_clusters=k, random_state=42, n_init="auto")
-    kmeans_test.fit(umap_embeddings)
+    kmeans_test.fit(pca_df)
     inertia.append(kmeans_test.inertia_)
 
 plt.figure(figsize=(8, 4))
@@ -242,12 +249,11 @@ plt.grid(True)
 plt.show()
 
 ```
-
+##
 ```{python}
 #| label: final clustering
-optimal_k = 4 
+optimal_k = 13
 
-# 4. Final Clustering & Visualization
 final_model = KMeans(n_clusters=optimal_k, random_state=42, n_init="auto")
 labels = final_model.fit_predict(umap_embeddings)
 
@@ -256,241 +262,47 @@ plt.scatter(umap_embeddings[:, 0], umap_embeddings[:, 1], c=labels, cmap='viridi
 plt.colorbar(label='Cluster Label')
 plt.title(f"UMAP Projection with {optimal_k} K-Means Clusters")
 plt.show()
-```
-
-
-
-```{python}
-#| label: TNSE on PCA components
-#| cache: true
-
-tsne = TSNE(n_components=2, random_state=42, max_iter=5000)
-tsne_results = tsne.fit_transform(pca_df)
-
-plt.figure(figsize=(8,6))
-plt.scatter(tsne_results[:,0], tsne_results[:,1], alpha=0.5)
-plt.title('T-SNE Visualization of Clusters')
-plt.xlabel('t-SNE Dimension 1')
-plt.ylabel('t-SNE Dimension 2')
-plt.grid()
-plt.show()
 
 ```
-
+##
 ```{python}
-#| label: Optimize K for K-Means using Elbow Method
-#| cache: true
+#| label: HDBSCAN Clustering
 
-wcss = []
-for i in range(1, 11): 
-    kmeans = KMeans(n_clusters=i, init='k-means++', random_state=42, n_init=10)
-    kmeans.fit(pca_df)
-    wcss.append(kmeans.inertia_)
+import hdbscan
+from hdbscan import validity
 
-plt.figure(figsize=(10, 5))
-plt.plot(range(1, 11), wcss, marker='o', linestyle='--')
-plt.title('Elbow Method for Optimal K')
-plt.xlabel('Number of Clusters (K)')
-plt.ylabel('WCSS')
-plt.xticks(range(1, 11))
-plt.grid()
-plt.show()
+for i in range(100,600,100):
+    print(f"HDBSCAN with min_cluster_size = {i}")
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=i, gen_min_span_tree=True)
+    cluster_labels = clusterer.fit_predict(umap_embeddings)
 
-```
-```{python}
-#| label: K-Means Clustering and Visualization for K=2 to K = 6
+    n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
 
-for i in range(2,6):
-    kmeans = KMeans(n_clusters=2, random_state=42, n_init=10) 
-    cluster_labels = kmeans.fit_predict(pca_df)
+    score = validity.validity_index(umap_embeddings.astype('double'), cluster_labels)
+    print(f"DBCV Score: {score:.3f}")
 
-    tsne_df = pd.DataFrame(tsne_results, columns=['tSNE Dim 1', 'tSNE Dim 2'])
-    tsne_df['Cluster'] = cluster_labels
-
+    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
     plt.figure(figsize=(10, 8))
-    sns.scatterplot(
-        data=tsne_df, 
-        x='tSNE Dim 1', 
-        y='tSNE Dim 2', 
-        hue='Cluster', 
-        palette=sns.color_palette('Accent', n_colors=6), 
-        legend='full',
-        alpha=0.7)
-    plt.title('T-SNE Visualization Colored by K-Means Clusters')
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-    plt.grid(True)
+    plt.scatter(
+        umap_embeddings[:, 0], 
+        umap_embeddings[:, 1], 
+        c=cluster_labels,      
+        cmap='Spectral', 
+        s=5)
+    plt.title('Housing Clusters via HDBSCAN (Organic Shapes)')
+    plt.colorbar(label='Cluster Label')
+    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
     plt.show()
 
 ```
+##
 ```{python}
-#| label: Relate back to original features for K=2
-#| cache: true
+#| label: Cluster Profiling
 
-kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
-cluster_labels = kmeans.fit_predict(pca_df)
-df_q_only['Cluster'] = cluster_labels
+numeric_parcel_data['Cluster_ID'] = cluster_labels
 
-# Distribution across Clusters
-cluster_counts = df_q_only['Cluster'].value_counts()
-print("Cluster Counts:")
-print(cluster_counts)
+cluster_profile = numeric_parcel_data.groupby('Cluster_ID').mean()
 
-# Calculate and compare the mean of all features for each cluster
-cluster_profiles = df_q_only.groupby('Cluster').mean().T
-print(cluster_profiles)
+print(cluster_profile.T)
 
 ```
-
-## Comp Transformed Data
-
-```{python}
-#| label: PCA and Scree Plot p-two
-#| cache: true
-
-pca_full = PCA(n_components=None) # n_components=None keeps all features as components
-pca_full.fit(X_scaled_comp)
-
-```
-```{python}
-#| label: Scree Plot to optimize number of components p-two
-#| cache: true
-
-plt.figure(figsize=(8, 6))
-plt.plot(range(1, len(pca_full.explained_variance_ratio_) + 1), 
-         pca_full.explained_variance_ratio_.cumsum(), 
-         marker='o', linestyle='--')
-plt.title('Scree Plot (Cumulative Variance)')
-plt.xlabel('Number of Components')
-plt.ylabel('Cumulative Explained Variance')
-plt.grid()
-plt.show()
-
-```
-```{python}
-#| label: PCA with 12 components p-two
-#| cache: true
-
-pca = PCA(n_components=12)
-principal_components = pca.fit_transform(X_scaled_comp)
-
-pca_df = pd.DataFrame(data=principal_components, columns=[
-    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12'])
-
-pca.explained_variance_ratio_.sum()
-
-```
-
-```{python}
-#| label: UMAP p-two
-#| cache: true
-
-reducer = umap.UMAP(
-    n_neighbors=15, 
-    min_dist=0.1, 
-    random_state=42
-)
-
-umap_embeddings = reducer.fit_transform(pca_df)
-
-model = KMeans(n_clusters=5, random_state=42)
-labels = model.fit_predict(umap_embeddings)
-
-plt.scatter(umap_embeddings[:, 0], umap_embeddings[:, 1], c=labels, cmap='viridis', s=5)
-plt.title("UMAP Projection with K-Means Clusters")
-plt.xlabel("")
-plt.ylabel("")
-plt.show()
-
-```
-
-
-
-
-
-
-
-```{python}
-#| label: TNSE on PCA components p-two
-#| cache: true
-
-tsne = TSNE(n_components=2, random_state=42, max_iter=5000)
-tsne_results = tsne.fit_transform(pca_df)
-
-plt.figure(figsize=(8,6))
-plt.scatter(tsne_results[:,0], tsne_results[:,1], alpha=0.5)
-plt.title('T-SNE Visualization of Clusters')
-plt.xlabel('t-SNE Dimension 1')
-plt.ylabel('t-SNE Dimension 2')
-plt.grid()
-plt.show()
-
-```
-
-```{python}
-#| label: Optimize K for K-Means using Elbow Method p-two
-#| cache: true
-
-wcss = []
-for i in range(1, 11): 
-    kmeans = KMeans(n_clusters=i, init='k-means++', random_state=42, n_init=10)
-    kmeans.fit(pca_df)
-    wcss.append(kmeans.inertia_)
-
-plt.figure(figsize=(10, 5))
-plt.plot(range(1, 11), wcss, marker='o', linestyle='--')
-plt.title('Elbow Method for Optimal K')
-plt.xlabel('Number of Clusters (K)')
-plt.ylabel('WCSS')
-plt.xticks(range(1, 11))
-plt.grid()
-plt.show()
-
-```
-```{python}
-#| label: K-Means Clustering and Visualization for K=2 to K=5 p-two
-#| cache: true
-
-for i in range(2,6):
-    kmeans = KMeans(n_clusters=i, random_state=42, n_init=10) 
-    cluster_labels = kmeans.fit_predict(pca_df)
-
-    tsne_df = pd.DataFrame(tsne_results, columns=['tSNE Dim 1', 'tSNE Dim 2'])
-    tsne_df['Cluster'] = cluster_labels
-
-    plt.figure(figsize=(10, 8))
-    sns.scatterplot(
-        data=tsne_df, 
-        x='tSNE Dim 1', 
-        y='tSNE Dim 2', 
-        hue='Cluster', 
-        palette=sns.color_palette('Accent', n_colors=6), 
-        legend='full',
-        alpha=0.7)
-    plt.title('T-SNE Visualization Colored by K-Means Clusters')
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-    plt.grid(True)
-    plt.show()
-
-```
-```{python}
-#| label: Relate back to original features for K=2 p-two
-#| cache: true
-
-kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
-cluster_labels = kmeans.fit_predict(pca_df)
-df_competition['Cluster'] = cluster_labels
-
-# Distribution across Clusters
-cluster_counts = df_competition['Cluster'].value_counts()
-print("Cluster Counts:")
-print(cluster_counts)
-
-# Calculate and compare the mean of all features for each cluster
-cluster_profiles = df_competition.groupby('Cluster').mean().T
-print(cluster_profiles)
-
-```
-
-:::
