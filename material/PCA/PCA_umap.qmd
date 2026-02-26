@@ -306,3 +306,58 @@ cluster_profile = numeric_parcel_data.groupby('Cluster_ID').mean()
 print(cluster_profile.T)
 
 ```
+
+
+```{python}
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+dominant_pc = pca_df.idxmax(axis=1)
+
+plt.figure(figsize=(12, 8))
+sns.scatterplot(
+    x=umap_embeddings[:, 0], 
+    y=umap_embeddings[:, 1], 
+    hue=dominant_pc, 
+    palette='tab20',
+    s=10,
+    alpha=0.8
+)
+
+plt.title("UMAP Colored by Most Dominant Principal Component (PC1-PC13)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper right', title='Dominant PC')
+plt.show()
+```
+___________________________
+
+
+```{python}
+#| label: merge_w_res
+
+parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
+
+residential_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2025 MLS Residential Sales.xlsm", sheet_name = "Sales")
+
+land_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 MLS Land Sales.xlsm", sheet_name = "Sales")
+
+multi_fam_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 Multi-Family MLS Export.xlsm", sheet_name = "textexport (3)")
+
+import pandas as pd
+
+merged_df = pd.merge(
+    residential_export, 
+    parcel_export, 
+    left_on='Parcel Number', 
+    right_on='ParcelId', 
+    how='right')
+merged_df = merged_df.merge(land_export, left_on='ParcelId', right_on='Parcel Number', how='left')
+merged_df = merged_df.merge(multi_fam_export, 
+                            left_on='ParcelId', right_on='Parcel Number', 
+                            how='left', suffixes=('', '_multi'))
+
+merged_df.to_csv('all_merged_w_parcel.csv', index=False)
+
+
+```
+
+
