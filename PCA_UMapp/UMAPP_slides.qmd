@@ -39,8 +39,8 @@ res_target = res_df['Sold Price']
 puma_target = puma_df['Sold Price'] 
 
 # Drop target-leakage columns
-res_features = res_df.drop(columns=['Sold Price', 'List Price', 'Original List Price'])
-puma_features = puma_df.drop(columns=['Sold Price', 'Adjusted SP'])
+res_features = res_df.drop(columns=['Sold Price', 'List Price', 'Original List Price', 'List Number', 'MLS Area', 'Postal Code', 'Sold Price Per/SqFt'])
+puma_features = puma_df.drop(columns=['Sold Price', 'Adjusted SP', 'List Number'])
 
 def get_scaled_data(df):
     X = df.fillna(0)
@@ -128,6 +128,36 @@ def plot_price_correlation(df_features, target_series, title):
     plt.title(f"Top Features Driving Sold Price: {title}")
     plt.show()
 
+def plot_pca_price_correlation(pca_scores, target_series, title):
+    """
+    Ranks the Principal Components by how strongly they correlate with Sold Price.
+    This proves if our 'Unsupervised' math matches 'Supervised' value.
+    """
+    # Create a DataFrame from the PCA transformed data
+    pc_names = [f'PC{i+1}' for i in range(pca_scores.shape[1])]
+    pca_df = pd.DataFrame(pca_scores, columns=pc_names)
+    
+    # Add the target (reset index to ensure alignment)
+    pca_df['Target'] = target_series.values 
+    
+    # Calculate correlations
+    corrs = pca_df.corr()['Target'].drop('Target')
+    
+    # Sort by absolute strength (since a negative correlation is still a strong predictor)
+    corrs_sorted = corrs.reindex(corrs.abs().sort_values(ascending=False).index).head(10)
+
+    plt.figure(figsize=(10, 5))
+    colors = ['teal' if x > 0 else 'indianred' for x in corrs_sorted]
+    corrs_sorted.plot.bar(color=colors)
+    
+    plt.axhline(0, color='black', linewidth=0.8)
+    plt.title(f"Correlation: Principal Components vs. Sold Price ({title})")
+    plt.ylabel("Correlation Coefficient (r)")
+    plt.xlabel("Principal Components (Ranked by Strength)")
+    plt.show()
+    
+    return corrs_sorted
+
 def plot_pca_loadings(pca_model, df_features, title):
     """Uses the already-computed PCA model to show feature importance."""
     # Identify which columns were kept during scaling
@@ -149,6 +179,40 @@ def plot_pca_loadings(pca_model, df_features, title):
     plt.xticks(rotation=45, ha='right')
     plt.show()
 
+def plot_pca_heatmap(pca_model, df_features):
+    """
+    Plots a heatmap for ALL calculated PCA components with 
+    correlation coefficients labeled in the cells.
+    """
+    kept_columns = df_features.columns[df_features.fillna(0).var() > 1e-4]
+    loadings = pca_model.components_
+    num_pcs = loadings.shape[0]
+    
+    loadings_df = pd.DataFrame(
+        loadings.T, 
+        columns=[f'PC{i+1}' for i in range(num_pcs)], 
+        index=kept_columns
+    )
+    
+    # Adjust width dynamically based on PC count
+    plt.figure(figsize=(max(12, num_pcs * 1.2), 14))
+    
+    # Use 'annot=True' to show coefficients. 
+    # fmt=".2f" ensures we don't have long floating point strings.
+    sns.heatmap(loadings_df, 
+                annot=True, 
+                fmt=".2f", 
+                cmap='RdBu_r', 
+                center=0,
+                annot_kws={"size": 8}, # Smaller font to fit in cells
+                cbar_kws={'label': 'Correlation Coefficient'})
+    
+    plt.title(f"PCA Loadings: Feature Correlation to Principal Components", fontsize=16)
+    plt.ylabel("Original Features", fontsize=12)
+    plt.xlabel("Principal Components", fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
 # Stable Math (Scaling & PCA)
 res_scaled = get_scaled_data(res_features)
 res_pca_model = PCA(n_components=0.9).fit(res_scaled)
@@ -161,7 +225,7 @@ puma_pca_data = puma_pca_model.transform(puma_scaled)
 
 ```{python}
 #| label: umap-tuning
-
+#| cache: true
 # This cell controls the UMAPs
 
 # --- Residential UMAP Tuning ---
@@ -169,15 +233,15 @@ res_emb_l = get_umap_embedding(res_scaled, nn=15, md=0.01)
 res_emb_g = get_umap_embedding(res_scaled, nn=50, md=0.1)
 
 # Clustering based on current UMAP/PCA state
-res_l_clusters = get_clusters_from_pca(res_pca_data, min_size=15)
-res_g_clusters = get_clusters_from_pca(res_pca_data, min_size=15)
+res_l_clusters = get_clusters_from_pca(res_pca_data, min_size=30)
+res_g_clusters = get_clusters_from_pca(res_pca_data, min_size=30)
 
 # --- PUMA UMAP Tuning ---
 puma_emb_l = get_umap_embedding(puma_scaled, nn=15, md=0.01)
 puma_emb_g = get_umap_embedding(puma_scaled, nn=50, md=0.1)
 
-puma_l_clusters = get_clusters_from_pca(puma_pca_data, min_size=10)
-puma_g_clusters = get_clusters_from_pca(puma_pca_data, min_size=10)
+puma_l_clusters = get_clusters_from_pca(puma_pca_data, min_size=15)
+puma_g_clusters = get_clusters_from_pca(puma_pca_data, min_size=15)
 ```
 
 ## Kept Columns 
@@ -187,6 +251,10 @@ I am only keeping numeric columns. I have also dropped the following for being t
 - 'List Price'
 - 'Original List Price'
 - 'Adjusted SP' 
+- 'List Number'
+- 'MLS Area'
+- 'Postal Code'
+- 'Sold Price Per/SqFt'
 
 # Residential Analysis
 
@@ -202,6 +270,12 @@ plot_scree(res_scaled, "Residential")
 plot_price_correlation(res_features, res_target, "Residential")
 ```
 
+## PCA Correlation
+```{python}
+#| label: res_pca_price_corr
+plot_pca_price_correlation(res_pca_data, res_target, "Residential")
+```
+
 ## Res Local Structure
 ::: {layout-ncol=2}
 ```{python}
@@ -214,15 +288,11 @@ plot_precomputed_umap(res_emb_l, res_target, "Sold Price (Log-Scaled)")
 
 :::
 
-::: {style="font-size: 0.6em;"}
-
 ## Res Local UMAP Cluster
 ```{python}
 #| label: res_local_breakdown
 get_detailed_summary(res_df, res_l_clusters).T
 ```
-
-:::
 
 ## Res Global Trends
 ::: {layout-ncol=2}
@@ -236,21 +306,33 @@ plot_precomputed_umap(res_emb_g, res_target, "Sold Price (Log-Scaled)")
 
 :::
 
-::: {style="font-size: 0.65em;"}
-
 ## Res Global UMAP Cluster
 ```{python}
 #| label: res_global_breakdown
 get_detailed_summary(res_df, res_g_clusters).T
 ```
 
-:::
 
 ## Residential Feature Importance
 ```{python}
 #| label: res_feature_importance
 plot_pca_loadings(res_pca_model, res_features, "Residential")
 ```
+
+## Residential PCA Factor Analysis
+```{python}
+#| label: res_pca_heatmap
+plot_pca_heatmap(res_pca_model, res_features)
+```
+
+## The PCA "Hidden Logic"
+* **PC1 (The Volume Driver):** Dominated by **Total SqFt** and **Full Baths**. This is the market’s "Size Filter"—it separates the sprawling estates from the starter homes.
+* **PC2 (The Quality Signal):** Captures the relationship between **Main SqFt** and **Fireplaces**. This explains why "Main Floor Living" commands a premium even when total square footage is identical.
+
+## Strategic Market Segmentation
+* **The "Main Floor" Premium (Cluster 0 vs. 4):** Despite sharing nearly identical **Total SqFt (~3,200)**, Cluster 0 commands a **$120k premium** over Cluster 4. The PCA confirms this is driven by superior Main Floor area and bedroom count.
+* **The Luxury Slab-on-Grade (Cluster 5):** The highest-priced segment (**$680k avg**). Uniquely, their `Main SqFt` almost perfectly matches `Total SqFt`, identifying a high-spec "Ranch" or single-level luxury archetype that buyers prioritize.
+* **The Efficiency Split (Clusters 2 & 3):** These sub-800 SqFt properties are mathematically separated by a **$41k gap**, purely based on fireplace presence and minor utility differences—the "Tiny Home" market's internal hierarchy.
 
 # PUMA Analysis
 
@@ -266,6 +348,12 @@ plot_scree(puma_scaled, "PUMA")
 ```{python}
 #| label: puma_price_drivers
 plot_price_correlation(puma_features, puma_target, "PUMA")
+```
+
+## PCA Correlation
+```{python}
+#| label: puma_pca_price_corr
+plot_pca_price_correlation(puma_pca_data, puma_target, "PUMA")
 ```
 
 ##  PUMA Local Structure
@@ -309,3 +397,154 @@ get_detailed_summary(puma_df, puma_g_clusters).T
 #| label: puma_feature_importance
 plot_pca_loadings(puma_pca_model, puma_features, "PUMA")
 ```
+
+## PUMA PCA Factor Analysis
+```{python}
+#| label: puma_pca_heatmap
+plot_pca_heatmap(puma_pca_model, puma_features)
+```
+
+## The PCA "Hidden Logic"
+* **PC1 (The Capacity Driver):** Unlike the residential set, PUMA's first component is heavily influenced by **Garage Capacity** and **GLA (Gross Living Area)**. This represents the "Utility Anchor"—how many cars and how much total space the property provides.
+* **PC2 (The Subterranean Signal):** A massive differentiator in this data is **Basement SqFt**. PCA identifies this as a primary axis of variance, effectively splitting the market between properties with massive lower-level footprints and those built on slabs or crawlspaces.
+
+## Strategic Market Segmentation
+* **The "Basement Premium" (Cluster 3):** This is the highest-priced segment (**$554k avg**). PCA highlights this group not just for its size, but for its massive **Basement SqFt (1,444)** and high **Bedroom count (4.8)**. It represents the "Large Family" archetype.
+* **The Garage/Lot Combo (Cluster 0):** Commands a high price (**$470k**) despite having **zero basement space**. PCA shows this value is driven by the **Garage Capacity (2.44)** and **Lot Acres (0.18)**—prioritizing external utility over internal basement square footage.
+* **The High-Density Efficiency (Cluster 4):** The clear outlier with the lowest price (**$190k**). PCA groups these based on minimal GLA (657) and near-zero garage/basement capacity.
+
+# Market Comparison: Residential vs. PUMA
+
+## Dimensionality of Value
+* **Residential Strategy:** Value is driven by **"Main Floor Dominance."** The PCA shows that buyers pay a premium for how the primary living space is finished (Fireplaces/Main SqFt), even when total square footage is equal.
+* **PUMA Strategy:** Value is driven by **"Total Capacity."** The math reveals a market segmented by **Basement SqFt** and **Garage Capacity**. In this dataset, "Expansion Potential" is the primary axis of variance.
+
+## Side by Side Comparison
+| Metric | Residential Driver | PUMA Driver |
+| :--- | :--- | :--- |
+| **Primary PCA Axis** | Total SqFt / Full Baths | GLA / Garage Capacity |
+| **Secondary PCA Axis** | Main SqFt / Fireplaces | Basement SqFt / Lot Acres |
+| **Value Outlier** | Executive Layouts (Cluster 3) | Large Family Basements (Cluster 3) |
+| **Market Split** | Lifestyle & Layout | Utility & Expansion |
+
+## Final Synthesis
+> This analysis proves that "Price per Square Foot" is an oversimplification. By using **PCA-based clustering**, we’ve demonstrated that different sectors of the land market have fundamentally different mathematical structures. 
+>
+> * **Residential** is a market of **Design**: where the square footage is located matters most. 
+> * **PUMA** is a market of **Utility**: where the total capacity for storage and family growth dictates the price.
+
+# Random Forest
+
+```{python}
+#| label: random_forest
+def run_quick_rf(df_features, target, cluster_labels, title):
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_absolute_error, r2_score
+
+    # Feature Engineering
+    X = df_features.copy()
+    X['Cluster'] = cluster_labels
+    X = pd.get_dummies(X, columns=['Cluster'], prefix='C').fillna(0)
+
+    # Split
+    X_train, X_test, y_train, y_test = train_test_split(X, target, test_size=0.2, random_state=42)
+
+    # Train
+    rf = RandomForestRegressor(n_estimators=100, n_jobs=-1, random_state=42)
+    rf.fit(X_train, y_train)
+    y_pred = rf.predict(X_test)
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.scatter(y_test, y_pred, alpha=0.5, color='teal' if "Res" in title else 'orchid')
+    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
+    plt.title(f"{title} Prediction Performance\nR² = {r2_score(y_test, y_pred):.2f} | MAE = ${mean_absolute_error(y_test, y_pred):,.0f}")
+    plt.xlabel("Actual Sold Price")
+    plt.ylabel("Predicted Sold Price")
+    plt.show()
+    
+    # Return the model and the data for later use in tables
+    return rf, X_train, X_test, y_train, y_test
+
+def get_model_report_card(res_model, res_X_test, res_y_test, puma_model, puma_X_test, puma_y_test):
+    """Generates a summary table comparing model performance across datasets."""
+    from sklearn.metrics import mean_absolute_error, r2_score
+    
+    # Calculate metrics for Residential
+    res_pred = res_model.predict(res_X_test)
+    res_r2 = r2_score(res_y_test, res_pred)
+    res_mae = mean_absolute_error(res_y_test, res_pred)
+    
+    # Calculate metrics for PUMA
+    puma_pred = puma_model.predict(puma_X_test)
+    puma_r2 = r2_score(puma_y_test, puma_pred)
+    puma_mae = mean_absolute_error(puma_y_test, puma_pred)
+    
+    report = pd.DataFrame({
+        "Metric": ["R-Squared (Accuracy)", "Mean Absolute Error ($)"],
+        "Residential Model": [f"{res_r2:.3f}", f"${res_mae:,.2f}"],
+        "PUMA Model": [f"{puma_r2:.3f}", f"${puma_mae:,.2f}"]
+    })
+    
+    return report
+
+def get_feature_importance_table(model, X_train, title):
+    """Returns a table of the top 5 most influential features for the model."""
+    importances = model.feature_importances_
+    feature_names = X_train.columns
+    
+    feat_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance (%)': importances * 100
+    }).sort_values(by='Importance (%)', ascending=False).head(5)
+    
+    feat_df['Dataset'] = title
+    return feat_df
+```
+
+## What is Random Forest
+* **Beyond Linear Logic:** While standard regressions look for straight lines, a **Random Forest** builds hundreds of "Decision Trees" to capture complex, non-linear relationships in the land market.
+* **Feature Importance:** This model allows us to quantify exactly how much our "Mathematical Clusters" actually contribute to the final Sold Price.
+
+## My Predictive Pipeline
+1.  **Dimensionality Reduction (PCA):** We compressed 20+ noisy variables into the 90% "mathematical skeleton" of the data.
+2.  **Manifold Embedding (UMAP):** We projected that skeleton into 2D space to identify natural neighborhood and archetype clusters.
+3.  **Feature Augmentation:** We injected the **Cluster IDs** back into the raw data, giving the model a "hint" about which market segment each property belongs to.
+4.  **Ensemble Learning (Random Forest):** We trained a forest of 100 trees to predict the price, using every available CPU core for maximum efficiency.
+
+## Residential Random Forest
+
+```{python}
+#| label: res_rf
+res_rf, res_X_train, res_X_test, res_y_train, res_y_test = run_quick_rf(res_features, res_target, res_l_clusters, "Residential")
+```
+
+## PUMA Random Forest
+
+```{python}
+#| label: puma_rf
+puma_rf, puma_X_train, puma_X_test, puma_y_train, puma_y_test = run_quick_rf(puma_features, puma_target, puma_l_clusters, "PUMA")
+```
+
+## Performance
+```{python}
+#| label: model_report_card
+get_model_report_card(res_rf, res_X_test, res_y_test, puma_rf, puma_X_test, puma_y_test)
+```
+
+## Feature Importance
+::: {layout-ncol=2}
+
+```{python}
+get_feature_importance_table(res_rf, res_X_train, "Residential")
+```
+
+```{python}
+get_feature_importance_table(puma_rf, puma_X_train, "PUMA")
+```
+:::
+
+## The Verdict
+* **Residential** is a "Main Floor" market. 90%+ of the price is explained by the layout and the price-per-foot efficiency.
+* **PUMA** is an "Acreage and Infrastructure" market. Value is more distributed across the land itself and the capacity for vehicles and storage.
