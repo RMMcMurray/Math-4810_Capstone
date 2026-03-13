@@ -29,17 +29,24 @@ import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import matplotlib.colors as colors
+import shap
 
 # Load data
 res_df = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv").select_dtypes(include=['number'])
 puma_df = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv").select_dtypes(include=['number'])
 
-# Separate data - FIXED puma_target reference
+# Separate data
+res_df = res_df[res_df['Sold Price'] > 5].copy()
+puma_df = puma_df[puma_df['Sold Price'] > 5].copy()
+
 res_target = res_df['Sold Price'] 
 puma_target = puma_df['Sold Price'] 
+res_target_log = np.log1p(res_df['Sold Price'])
+puma_target_log = np.log1p(puma_df['Sold Price'])
+
 
 # Drop target-leakage columns
-res_features = res_df.drop(columns=['Sold Price', 'List Price', 'Original List Price', 'List Number', 'MLS Area', 'Postal Code', 'Sold Price Per/SqFt'])
+res_features = res_df.drop(columns=['Sold Price', 'List Price', 'Original List Price', 'List Number', 'MLS Area', 'Postal Code', 'Sold Price Per/SqFt', 'Total Taxes'])
 puma_features = puma_df.drop(columns=['Sold Price', 'Adjusted SP', 'List Number'])
 
 def get_scaled_data(df):
@@ -288,12 +295,6 @@ plot_precomputed_umap(res_emb_l, res_target, "Sold Price (Log-Scaled)")
 
 :::
 
-## Res Local UMAP Cluster
-```{python}
-#| label: res_local_breakdown
-get_detailed_summary(res_df, res_l_clusters).T
-```
-
 ## Res Global Trends
 ::: {layout-ncol=2}
 ```{python}
@@ -306,12 +307,13 @@ plot_precomputed_umap(res_emb_g, res_target, "Sold Price (Log-Scaled)")
 
 :::
 
-## Res Global UMAP Cluster
+::: {style="font-size: 0.6em;"}
+## Res UMAP Cluster
 ```{python}
-#| label: res_global_breakdown
-get_detailed_summary(res_df, res_g_clusters).T
+#| label: res_local_breakdown
+get_detailed_summary(res_df, res_l_clusters).T
 ```
-
+:::
 
 ## Residential Feature Importance
 ```{python}
@@ -367,11 +369,6 @@ plot_precomputed_umap(puma_emb_l, puma_target, "Sold Price (Log-Scaled)")
 ```
 
 :::
-## PUMA Local UMAP Cluster
-```{python}
-#| label: puma_local_breakdown
-get_detailed_summary(puma_df, puma_l_clusters).T
-```
 
 ## PUMA Global Structure
 ::: {layout-ncol=2}
@@ -386,11 +383,14 @@ plot_precomputed_umap(puma_emb_g, puma_target, "Sold Price (Log-Scaled)")
 
 :::
 
-## PUMA Global UMAP Cluster
+::: {style="font-size: 0.6em;"}
+## PUMA UMAP Cluster
 ```{python}
-#| label: puma_global_breakdown
-get_detailed_summary(puma_df, puma_g_clusters).T
+#| label: puma_local_breakdown
+get_detailed_summary(puma_df, puma_l_clusters).T
 ```
+
+:::
 
 ## PUMA Feature Importance
 ```{python}
@@ -428,7 +428,7 @@ plot_pca_heatmap(puma_pca_model, puma_features)
 | **Market Split** | Lifestyle & Layout | Utility & Expansion |
 
 ## Final Synthesis
-> This analysis proves that "Price per Square Foot" is an oversimplification. By using **PCA-based clustering**, we’ve demonstrated that different sectors of the land market have fundamentally different mathematical structures. 
+> By using **PCA-based clustering**, we’ve demonstrated that different sectors of the property market have fundamentally different mathematical structures. 
 >
 > * **Residential** is a market of **Design**: where the square footage is located matters most. 
 > * **PUMA** is a market of **Utility**: where the total capacity for storage and family growth dictates the price.
@@ -437,54 +437,65 @@ plot_pca_heatmap(puma_pca_model, puma_features)
 
 ```{python}
 #| label: random_forest
-def run_quick_rf(df_features, target, cluster_labels, title):
+
+# Create Log Targets
+res_target_log = np.log1p(res_df['Sold Price'])
+puma_target_log = np.log1p(puma_df['Sold Price'])
+
+def run_log_rf(df_features, target_log, cluster_labels, title):
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import mean_absolute_error, r2_score
 
-    # Feature Engineering
+    # Feature Prep
     X = df_features.copy()
     X['Cluster'] = cluster_labels
     X = pd.get_dummies(X, columns=['Cluster'], prefix='C').fillna(0)
 
     # Split
-    X_train, X_test, y_train, y_test = train_test_split(X, target, test_size=0.2, random_state=42)
+    X_train, X_test, y_train_log, y_test_log = train_test_split(X, target_log, test_size=0.2, random_state=42)
 
     # Train
     rf = RandomForestRegressor(n_estimators=100, n_jobs=-1, random_state=42)
-    rf.fit(X_train, y_train)
-    y_pred = rf.predict(X_test)
+    rf.fit(X_train, y_train_log)
+    
+    # Predict
+    y_pred_log = rf.predict(X_test)
+
+    # Convert back to Dollars for Evaluation
+    y_test_dollars = np.expm1(y_test_log)
+    y_pred_dollars = np.expm1(y_pred_log)
+    
+    # Calculate Real-World Error
+    mae_dollars = mean_absolute_error(y_test_dollars, y_pred_dollars)
+    r2 = r2_score(y_test_log, y_pred_log) # R2 is calculated on the log scale
 
     # Plot
     plt.figure(figsize=(10, 6))
-    plt.scatter(y_test, y_pred, alpha=0.5, color='teal' if "Res" in title else 'orchid')
-    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-    plt.title(f"{title} Prediction Performance\nR² = {r2_score(y_test, y_pred):.2f} | MAE = ${mean_absolute_error(y_test, y_pred):,.0f}")
-    plt.xlabel("Actual Sold Price")
-    plt.ylabel("Predicted Sold Price")
+    plt.scatter(y_test_log, y_pred_log, alpha=0.5, color='darkblue')
+    plt.plot([y_test_log.min(), y_test_log.max()], [y_test_log.min(), y_test_log.max()], 'r--')
+    plt.title(f"{title} (Log-Scale) Performance\nR² = {r2:.2f} | Avg Error = ${mae_dollars:,.0f}")
     plt.show()
-    
-    # Return the model and the data for later use in tables
-    return rf, X_train, X_test, y_train, y_test
+
+    return rf, X_train, X_test, y_train_log, y_test_log
 
 def get_model_report_card(res_model, res_X_test, res_y_test, puma_model, puma_X_test, puma_y_test):
-    """Generates a summary table comparing model performance across datasets."""
     from sklearn.metrics import mean_absolute_error, r2_score
     
-    # Calculate metrics for Residential
-    res_pred = res_model.predict(res_X_test)
-    res_r2 = r2_score(res_y_test, res_pred)
-    res_mae = mean_absolute_error(res_y_test, res_pred)
+    # Residential: Predict in Log, convert to Dollars
+    res_pred_log = res_model.predict(res_X_test)
+    res_r2 = r2_score(res_y_test, res_pred_log)
+    res_mae_dollars = mean_absolute_error(np.expm1(res_y_test), np.expm1(res_pred_log))
     
-    # Calculate metrics for PUMA
-    puma_pred = puma_model.predict(puma_X_test)
-    puma_r2 = r2_score(puma_y_test, puma_pred)
-    puma_mae = mean_absolute_error(puma_y_test, puma_pred)
+    # PUMA: Predict in Log, convert to Dollars
+    puma_pred_log = puma_model.predict(puma_X_test)
+    puma_r2 = r2_score(puma_y_test, puma_pred_log)
+    puma_mae_dollars = mean_absolute_error(np.expm1(puma_y_test), np.expm1(puma_pred_log))
     
     report = pd.DataFrame({
         "Metric": ["R-Squared (Accuracy)", "Mean Absolute Error ($)"],
-        "Residential Model": [f"{res_r2:.3f}", f"${res_mae:,.2f}"],
-        "PUMA Model": [f"{puma_r2:.3f}", f"${puma_mae:,.2f}"]
+        "Residential Model": [f"{res_r2:.3f}", f"${res_mae_dollars:,.2f}"],
+        "PUMA Model": [f"{puma_r2:.3f}", f"${puma_mae_dollars:,.2f}"]
     })
     
     return report
@@ -503,28 +514,28 @@ def get_feature_importance_table(model, X_train, title):
     return feat_df
 ```
 
-## What is Random Forest
-* **Beyond Linear Logic:** While standard regressions look for straight lines, a **Random Forest** builds hundreds of "Decision Trees" to capture complex, non-linear relationships in the land market.
-* **Feature Importance:** This model allows us to quantify exactly how much our "Mathematical Clusters" actually contribute to the final Sold Price.
-
-## My Predictive Pipeline
-1.  **Dimensionality Reduction (PCA):** We compressed 20+ noisy variables into the 90% "mathematical skeleton" of the data.
-2.  **Manifold Embedding (UMAP):** We projected that skeleton into 2D space to identify natural neighborhood and archetype clusters.
-3.  **Feature Augmentation:** We injected the **Cluster IDs** back into the raw data, giving the model a "hint" about which market segment each property belongs to.
-4.  **Ensemble Learning (Random Forest):** We trained a forest of 100 trees to predict the price, using every available CPU core for maximum efficiency.
-
 ## Residential Random Forest
 
 ```{python}
 #| label: res_rf
-res_rf, res_X_train, res_X_test, res_y_train, res_y_test = run_quick_rf(res_features, res_target, res_l_clusters, "Residential")
+res_rf, res_X_train, res_X_test, res_y_train, res_y_test = run_log_rf(
+    res_features, 
+    res_target_log, 
+    res_l_clusters, 
+    "Residential"
+)
 ```
 
 ## PUMA Random Forest
 
 ```{python}
 #| label: puma_rf
-puma_rf, puma_X_train, puma_X_test, puma_y_train, puma_y_test = run_quick_rf(puma_features, puma_target, puma_l_clusters, "PUMA")
+puma_rf, puma_X_train, puma_X_test, puma_y_train, puma_y_test = run_log_rf(
+    puma_features, 
+    puma_target_log, 
+    puma_l_clusters, 
+    "PUMA"
+)
 ```
 
 ## Performance
@@ -545,6 +556,61 @@ get_feature_importance_table(puma_rf, puma_X_train, "PUMA")
 ```
 :::
 
-## The Verdict
-* **Residential** is a "Main Floor" market. 90%+ of the price is explained by the layout and the price-per-foot efficiency.
-* **PUMA** is an "Acreage and Infrastructure" market. Value is more distributed across the land itself and the capacity for vehicles and storage.
+# Shap
+
+```{python}
+#| label: run_ai
+#| cache: true
+import shap
+explainer = shap.TreeExplainer(res_rf)
+# Use a subset of X_test if it's too slow (e.g., res_X_test.iloc[:100])
+shap_values = explainer.shap_values(res_X_test)
+```
+
+## Global
+
+```{python}
+#| label: Beeswarm Plot
+#| cache: true
+shap.summary_plot(shap_values, res_X_test, max_display=10, show=False)
+```
+
+## Local
+
+```{python}
+#| label: waterfall
+#| cache: true
+shap.plots.waterfall(explainer(res_X_test)[0])
+```
+
+## Cluster
+
+```{python}
+shap.dependence_plot("Main SqFt", shap_values, res_X_test, interaction_index="C_0")
+```
+
+# Executive Summary: Market Logic & Model Integrity
+
+## Key Value Drivers: Two Distinct "Market DNAs"
+Our analysis proves that "Price per Square Foot" is an oversimplification. The models identify two unique valuation profiles:
+
+* **Residential (The "Lifestyle" Market):**
+    * **Interior Dominance:** ~66% of value is driven by **Total & Main SqFt**.
+    * **Modern Premium:** **Year Built** and **HOA Dues** are Top-5 drivers, proving buyers pay a premium for newer, managed communities.
+* **PUMA (The "Utility" Market):**
+    * **Land Importance:** **Lot Acres (33.3%)** is nearly as vital as building size.
+    * **Capacity Focus:** After land and size, **Basement SqFt** and **Garage Capacity** dictate value, highlighting a market focused on storage and footprint.
+
+## Statistical Defensibility & Equitability
+By utilizing a **Log-Scale Transformation**, we ensure the model meets the "Gold Standard" for Mass Appraisal:
+
+* **Vertical Equity:** Modeling log-prices ensures proportional fairness. A 5% error is treated equally across all price tiers, protecting both low-income and high-income taxpayers.
+* **Model Accuracy:** High $R^2$ values across both datasets confirm the model captures the vast majority of market variance.
+* **Transparency:** Using **SHAP Waterfall plots**, the Assessor's office can provide an "itemized receipt" for any single property, showing exactly how specific features contributed to its valuation.
+
+## Strategic Market Segmentation
+Our **PCA-UMAP Clustering** successfully identified "Natural Neighborhoods" based on property archetypes rather than just zip codes.
+
+* **The "Main Floor" Premium:** PCA confirms that Residential buyers pay significantly more for "Main Floor" living area, even when total square footage is identical.
+* **Utility archetypes:** In PUMA, the model successfully separates properties with massive subterranean footprints (Basements) from slab-on-grade utility buildings.
+* **Defensible Groups:** These clusters provide the mathematical justification for applying different valuation logic to different sectors of the market.
