@@ -1,0 +1,347 @@
+---
+title: "Price Adjustment"
+author: "Ryan McMurray"
+format:
+  revealjs:
+    code-fold: true
+    theme: simple
+    slide-number: true
+    width: 1600
+    height: 900
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+  message: false
+jupyter: python3
+---
+# Loading and Cleaning
+## Load And Clean
+
+```{python}
+#| label: load_data
+import pandas as pd
+import numpy as np
+import statsmodels.formula.api as smf
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
+
+# Load Sales Files
+res = pd.read_csv('data/MLS_Residential_Sales.csv').assign(segment='Residential')
+multi = pd.read_csv('data/Multi-Family_MLS_Export.csv').assign(segment='Multi-Family')
+land = pd.read_csv('data/MLS_Land_Sales.csv').assign(segment='Land Sales')
+
+# Stack all sales into one "Long" dataframe
+all_sales = pd.concat([res, multi, land], ignore_index=True)
+
+# Load Parcel Characteristics
+parcels = pd.read_csv('data/parcel_export.csv')
+
+# Attach Parcel data to Sales data
+df_combined = pd.merge(all_sales, parcels, left_on='Parcel Number', right_on='ParcelId', how='left')
+
+# Convert Sale Date to a format Python understands
+df_combined['Sold Date'] = pd.to_datetime(df_combined['Sold Date'])
+
+print(f"Total Sales Loaded: {len(df_combined)}")
+```
+
+# Adjust Prices & Create Time Variables
+
+## Adjust Prices
+
+```{python}
+#| label: adjust_prices
+# Concession Adjustment
+df_combined['Adj_Price'] = df_combined['Sold Price'] - df_combined['Concessions Amount'].fillna(0)
+
+# Filter for math safety
+df_combined = df_combined[df_combined['Adj_Price'] > 0].copy()
+df_combined['ln_Price'] = np.log(df_combined['Adj_Price'])
+```
+
+## Rolling Median Spline Dates
+
+```{python}
+#| label: Spline Visualization
+# Rolling Median Method
+df_combined['YearMonth'] = df_combined['Sold Date'].dt.to_period('M')
+monthly_summary = df_combined.groupby('YearMonth')['ln_Price'].median()
+
+# Plot to visually identify the knots
+monthly_summary.plot(style='o-')
+```
+
+## Piecewise Regression Spline dates
+
+Documentation on this
+
+```{python}
+#| label: piecewise_regression
+import pwlf
+
+# Setup the numeric timeline
+start_date = pd.Timestamp('2021-01-01') # Adjusted for 36 months
+df_combined['days_since'] = (df_combined['Sold Date'] - start_date).dt.days
+
+# Fit the model for n segments (n-1 internal knots)
+x = df_combined['days_since'].values
+y = df_combined['ln_Price'].values
+model = pwlf.PiecewiseLinFit(x, y)
+knots = model.fit(4) # Controls the number of knots(currently 3)
+
+# Convert all knots to Timestamps
+best_dates = [start_date + pd.Timedelta(days=int(k)) for k in knots]
+
+# Print all internal splines
+print("--- 36-Month Market Inflection Points ---")
+for i, d in enumerate(best_dates[1:-1], 1):
+    print(f"Spline {i}: {d.date()}")
+```
+
+## Global vs. Sub-Market Splines Pros{background-color="#adffc1ff"}
+
+::: columns
+::: {.column width="50%"}
+### **Global**
+
+* **Statistical Stability.** Uses 7,000+ sales to find a "clean" signal; less prone to outlier noise.
+* **Direct Comparability.** Easy to compare how different segments reacted to the *same* dates.
+
+:::
+
+::: {.column width="50%"}
+### **Segmented**
+
+* **Market Sensitivity.** Captures the 3–6 month lag often seen in Land/Commercial sectors.
+* **Mathematical Precision.** Minimizes the "Residual Sum of Squares" for each specific data pool.
+:::
+:::
+
+## Global vs. Sub-Market Splines Cons{background-color="#ffb6adff"}
+
+::: columns
+::: {.column width="50%"}
+### **Global**
+
+* **Temporal Blur.** May miss specific "lags" in slower markets like Land or Multi-Family.
+* **Assumption.** Forces a single "shock date" on all asset classes regardless of reality.
+:::
+
+::: {.column width="50%"}
+### **Segmented**
+
+* **Overfitting Risk.** Small datasets (Multi-Family) may "break" at random, non-economic points.
+* **Complexity.** Harder to defend why "Time 1" starts in May for houses but September for land.
+:::
+:::
+
+## My Thoughts {background-color="#adceffff"}
+Use Global Splines anchored to the Residential market. Consistency > Precision. It provides a stable framework to measure how different sectors responded to the same macro-economic milestones.
+
+
+## Adjust Prices & Create Time Variables
+
+```{python}
+#| label: spline_adjustments
+
+# Manually input the dates found in the "Piecewise Regression" step
+# For 36 months, 4 splines is standard.
+start_date = pd.Timestamp('2021-01-01')
+spline1    = pd.Timestamp('2023-06-20') 
+spline2    = pd.Timestamp('2023-08-21')
+spline3    = pd.Timestamp('2024-01-16')
+lien_date  = pd.Timestamp('2026-01-01')
+
+def get_months_precise(sale_date, start, end):
+    if pd.isna(sale_date) or sale_date <= start: 
+        return 0
+    # Calculate overlap: how much of the sale's timeline falls in this bucket
+    effective_start = start
+    effective_end = min(sale_date, end)
+    
+    if effective_end <= effective_start:
+        return 0
+        
+    return (effective_end - effective_start).days / 30.44
+
+# Create the Time Variables (Matches the time_vars list in the regression cell)
+df_combined['Time1'] = df_combined['Sold Date'].apply(lambda x: get_months_precise(x, start_date, spline1))
+df_combined['Time2'] = df_combined['Sold Date'].apply(lambda x: get_months_precise(x, spline1, spline2))
+df_combined['Time3'] = df_combined['Sold Date'].apply(lambda x: get_months_precise(x, spline2, spline3))
+df_combined['Time5'] = df_combined['Sold Date'].apply(lambda x: get_months_precise(x, spline4, lien_date))
+```
+
+# The Time Trend Regression
+
+## Regression
+```{python}
+#| label: segmented_regression
+import statsmodels.formula.api as smf
+import pandas as pd
+
+# Define the targets for the loop
+segments = ['Residential', 'Multi-Family', 'Land Sales']
+# This list matches your 4-knot (5-segment) PWLF model
+time_vars = ['Time1', 'Time2', 'Time3', 'Time5']
+
+# Dictionary to store results for the next "Apply Adjustments" step
+market_coefficients = {}
+
+# Ensure log of GLA exists for the structural controls
+df_combined['ln_GLA'] = np.log(df_combined['Total SqFt'].replace(0, np.nan))
+
+for seg in segments:
+    # Filter for the specific market segment
+    df_seg = df_combined[df_combined['segment'] == seg].copy()
+    
+    # Identify which Time variables actually exist in the dataframe
+    # (Prevents errors if you change knot counts later)
+    existing_time = [v for v in time_vars if v in df_seg.columns]
+    time_str = " + ".join(existing_time)
+    
+    # 2Build the Formula
+    if seg != 'Land Sales':
+        # Residential/Multi use Square Foot and Age controls
+        df_seg = df_seg.dropna(subset=['ln_GLA', 'Year Built'])
+        formula = f"ln_Price ~ ln_GLA + Q('Year Built') + {time_str}"
+    else:
+        # Land only uses the Time Trend
+        formula = f"ln_Price ~ {time_str}"
+
+    # Run the Model
+    if len(df_seg) > 25: # Ensure enough data for 5+ variables
+        try:
+            model = smf.ols(formula=formula, data=df_seg).fit()
+            
+            # CRITICAL: Save the parameters for the adjustment step later
+            market_coefficients[seg] = model.params
+            
+            print(f"\n{'='*50}")
+            print(f" MARKET SEGMENT: {seg.upper()} ")
+            print(f"{'='*50}")
+            print(f"Obs: {len(df_seg)} | R-Squared: {model.rsquared:.3f}")
+            
+            # Format Results for the Slide
+            results_df = pd.DataFrame({
+                'Coefficient': model.params[existing_time],
+                'P-Value': model.pvalues[existing_time]
+            })
+            
+            # Add Significance 'Stars' for quick reading during the presentation
+            results_df['Sig'] = results_df['P-Value'].apply(
+                lambda x: '***' if x < 0.01 else ('**' if x < 0.05 else ('*' if x < 0.1 else 'ns'))
+            )
+            
+            print(results_df.round(5))
+            
+        except Exception as e:
+            print(f"Error running regression for {seg}: {e}")
+    else:
+        print(f"Skipping {seg}: Insufficient data ({len(df_seg)} obs).")
+```
+
+# Apply Adjustments to Lien Date
+## Next Steps
+Better Segments?
+- AREA Code. How far to break down?
+- Look at UMAP
+- Pricing tiers
+Have Lucca set up the other models
+
+## Lien Data Adjustments
+```{python}
+#| label: apply_trend
+
+def calculate_trended_price(row):
+    seg = row['segment']
+    if seg not in market_coefficients:
+        return row['Adj_Price']
+    
+    betas = market_coefficients[seg]
+    
+    # Define the max capacity of each bucket (months)
+    limits = {
+        'Time1': (spline1 - start_date).days / 30.44,
+        'Time2': (spline2 - spline1).days / 30.44,
+        'Time3': (spline3 - spline2).days / 30.44,
+        'Time5': (lien_date - spline4).days / 30.44
+    }
+    
+    # Calculate adjustment: (Max months in bucket - Months used by sale) * Beta
+    # This brings the sale price forward to the Lien Date environment.
+    adjustment_log = 0
+    for t_var in limits.keys():
+        if t_var in betas:
+            remaining_months = max(0, limits[t_var] - row.get(t_var, 0))
+            adjustment_log += betas[t_var] * remaining_months
+    
+    return row['Adj_Price'] * np.exp(adjustment_log)
+
+df_combined['Trended_Price'] = df_combined.apply(calculate_trended_price, axis=1)
+```
+
+# Vizualization
+## Next Steps
+- ANOVA Test (For Ryan)?
+- Different Vizualization
+
+## Vizualizations
+```{python}
+#| label: trend_visualization_refined
+#| code-fold: true
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
+
+# Data Preparation & Outlier Cleaning
+df_plot = df_combined[
+    (df_combined['segment'] == 'Residential') & 
+    (df_combined['Total SqFt'] > 100)
+].copy()
+
+df_plot['Price_SqFt_Original'] = df_plot['Adj_Price'] / df_plot['Total SqFt']
+df_plot['Price_SqFt_Trended'] = df_plot['Trended_Price'] / df_plot['Total SqFt']
+
+# Auto-zoom: Filter for 98% of the data to remove extreme pricing outliers
+y_limit = df_plot['Price_SqFt_Original'].quantile(0.98)
+df_plot = df_plot[df_plot['Price_SqFt_Original'] < y_limit]
+
+# Numeric conversion for mapping
+df_plot['date_num'] = mdates.date2num(df_plot['Sold Date'])
+
+# Plotting
+plt.figure(figsize=(16, 8))
+
+# Original Market (The "Before" - showing the volatility)
+sns.regplot(data=df_plot, x='date_num', y='Price_SqFt_Original', 
+            scatter_kws={'alpha':0.08, 'color':'gray', 's':10}, 
+            line_kws={'color':'#e74c3c', 'label':'Original Market (Volatile)', 'linewidth':3}, 
+            lowess=True)
+
+# Trended Market (The "After" - showing the stabilization)
+sns.regplot(data=df_plot, x='date_num', y='Price_SqFt_Trended', 
+            scatter=False, 
+            line_kws={'color':'#3498db', 'label':'Trended to Lien Date (Stabilized)', 'linewidth':4}, 
+            lowess=False) 
+
+# Visual Anchors (The Splines)
+spline_list = [spline1, spline2, spline3, spline4]
+for s in spline_list:
+    plt.axvline(mdates.date2num(s), color='black', linestyle='--', alpha=0.3, label='_nolegend_')
+
+#  Formatting
+ax = plt.gca()
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+plt.ylim(0, y_limit) 
+plt.title('Market Stabilization: Removing the Time Variable', fontsize=20, pad=20)
+plt.ylabel('Price per Square Foot', fontsize=14)
+plt.xlabel('Sale Date', fontsize=14)
+plt.legend(loc='upper left', fontsize=12, frameon=True)
+plt.grid(axis='y', alpha=0.2)
+
+plt.tight_layout()
+plt.show()
+```
