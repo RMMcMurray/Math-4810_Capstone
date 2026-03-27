@@ -1,0 +1,372 @@
+---
+title: "Iron County Housing Price Predictions"
+author: "Ryan McMurray, Melanie Jensen, Lucca"
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    width: 1600
+    height: 900
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+jupyter: python3
+---
+
+## The Question
+We are moving from raw data to non-linear structures:
+
+1. **Introduction**
+2. **Price Adjustment:**
+3. **Exploratory Analysis**
+4. **Model**
+5. **Next Steps**
+
+## Introduction
+
+- Information
+- Information
+
+```{python}
+# | label: load_data
+# | cache: true
+
+import pandas as pd
+import numpy as np
+import statsmodels.formula.api as smf
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from umap import UMAP
+import plotly.express as px
+import pwlf
+
+# Load Sales Files
+res = pd.read_csv(
+    "C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Residential_Sales.csv"
+).assign(segment="Residential")
+multi = pd.read_csv(
+    "C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/Multi-Family_MLS_Export.csv"
+).assign(segment="Multi-Family")
+land = pd.read_csv(
+    "C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv"
+).assign(segment="Land Sales")
+
+# Stack and Merge
+all_sales = pd.concat([res, multi, land], ignore_index=True)
+parcels = pd.read_csv(
+    "C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/parcel_export.csv"
+)
+df_combined = pd.merge(
+    all_sales, parcels, left_on="Parcel Number", right_on="ParcelId", how="left"
+)
+df_combined["Sold Date"] = pd.to_datetime(df_combined["Sold Date"])
+
+# Create res_df for the segmentation section later
+res_df = df_combined[df_combined["segment"] == "Residential"].copy()
+```
+
+# Price Adjustments
+
+## Why Adjust Prices
+
+- Temporal Normalization: Real estate is a time-sensitive asset.
+- Removing "Market Noise"
+- Isolation of Physical Value
+- Vertical Equity
+
+## Prices After Stabalization
+```{python}
+# | label: unified_price_adjustment
+# | message: false
+# | warning: false
+
+df_combined["Adj_Price"] = df_combined["Sold Price"] - df_combined[
+    "Concessions Amount"
+].fillna(0)
+df_combined = df_combined[df_combined["Adj_Price"] > 0].copy()
+df_combined["ln_Price"] = np.log(df_combined["Adj_Price"])
+df_combined["ln_GLA"] = np.log(df_combined["Total SqFt"].replace(0, np.nan))
+
+start_date = pd.Timestamp("2021-01-01")
+lien_date = pd.Timestamp("2026-01-01")
+x_days = (df_combined["Sold Date"] - start_date).dt.days.values
+
+pw_model = pwlf.PiecewiseLinFit(x_days, df_combined["ln_Price"].values)
+knots_days = pw_model.fit(3)
+knot_dates = [start_date + pd.Timedelta(days=int(k)) for k in knots_days]
+
+for i in range(len(knot_dates) - 1):
+    col_name = f"Time_{i + 1}"
+    start, end = knot_dates[i], knot_dates[i + 1]
+    df_combined[col_name] = df_combined["Sold Date"].apply(
+        lambda x: max(0, (min(x, end) - start).days / 30.44) if pd.notna(x) else 0
+    )
+
+df_combined["Trended_Price"] = df_combined["Adj_Price"].copy()
+time_cols = [c for c in df_combined.columns if c.startswith("Time_")]
+
+for seg in ["Residential", "Multi-Family", "Land Sales"]:
+    df_seg = df_combined[df_combined["segment"] == seg].copy()
+    if len(df_seg) < 20:
+        continue
+    valid_buckets = [col for col in time_cols if df_seg[col].max() > 0]
+    formula = (
+        f"ln_Price ~ {' + '.join(valid_buckets)} + ln_GLA + Q('Year Built')"
+        if seg != "Land Sales"
+        else f"ln_Price ~ {' + '.join(valid_buckets)}"
+    )
+    try:
+        res_ols = smf.ols(
+            formula,
+            data=df_seg.dropna(
+                subset=["ln_GLA", "Year Built"] if seg != "Land Sales" else []
+            ),
+        ).fit()
+        # Trending Logic
+        adj_log = 0
+        for idx, col in enumerate(time_cols):
+            if col in res_ols.params:
+                remaining = (
+                    (knot_dates[idx + 1] - knot_dates[idx]).days / 30.44
+                ) - df_combined.loc[df_combined["segment"] == seg, col]
+                adj_log += res_ols.params[col] * np.maximum(0, remaining)
+        df_combined.loc[df_combined["segment"] == seg, "Trended_Price"] *= np.exp(
+            adj_log
+        )
+    except:
+        pass
+```
+
+
+```{python}
+# | label: trend_visualization_refined
+# | code-fold: true
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
+
+# Data Preparation
+df_plot = df_combined[
+    (df_combined["segment"] == "Residential") & (df_combined["Total SqFt"] > 100)
+].copy()
+
+# Calculate Unit Prices
+df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot["Total SqFt"]
+df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot["Total SqFt"]
+
+# Outlier Cleaning
+y_limit = df_plot["Price_SqFt_Original"].quantile(0.98)
+df_plot = df_plot[df_plot["Price_SqFt_Original"] < y_limit]
+
+# Numeric conversion for regression plotting
+df_plot["date_num"] = mdates.date2num(df_plot["Sold Date"])
+
+# Plotting
+plt.figure(figsize=(16, 8))
+
+# Original Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Original",
+    scatter_kws={"alpha": 0.1, "color": "gray", "s": 12},
+    line_kws={
+        "color": "#e74c3c",
+        "label": "Original Market (Volatile)",
+        "linewidth": 3,
+    },
+    lowess=True,
+)
+
+# Trended Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Trended",
+    scatter=False,
+    line_kws={
+        "color": "#3498db",
+        "label": f"Trended to {lien_date.date()} (Stabilized)",
+        "linewidth": 4,
+    },
+    lowess=False,
+)
+
+# The Splines
+for s in knot_dates:
+    plt.axvline(
+        mdates.date2num(s), color="black", linestyle="--", alpha=0.2, label="_nolegend_"
+    )
+
+# Formatting for Revealjs
+ax = plt.gca()
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+plt.ylim(0, y_limit)
+plt.title("Residential Housing Market Stabilization", fontsize=22, pad=20)
+plt.ylabel("Price per Square Foot ($)", fontsize=14)
+plt.xlabel("Sale Date", fontsize=14)
+plt.legend(
+    loc="upper left", fontsize=13, frameon=True, facecolor="white", framealpha=0.9
+)
+plt.grid(axis="y", alpha=0.15)
+
+plt.tight_layout()
+plt.show()
+```
+
+# Exploratory Analysis
+
+```{python}
+# | label: analytics_functions
+import umap
+import hdbscan
+from scipy.stats import rankdata
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+
+# --- CORE UTILITIES ---
+def get_scaled_data(df):
+    # Strictly isolate numbers BEFORE doing any math
+    X = df.select_dtypes(include=[np.number]).fillna(0)
+    # Remove columns with zero variance (they break PCA)
+    X = X.loc[:, X.var() > 1e-4]
+    return StandardScaler().fit_transform(X)
+
+
+def get_umap_embedding(scaled_data, nn, md):
+    # Reduce dimensions via PCA first for UMAP stability
+    pca_data = PCA(n_components=0.9).fit_transform(scaled_data)
+    reducer = umap.UMAP(n_neighbors=nn, min_dist=md, random_state=42)
+    return reducer.fit_transform(pca_data)
+
+
+def get_clusters(pca_data, min_size=20):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_size, prediction_data=True)
+    return clusterer.fit_predict(pca_data)
+
+
+# --- VISUALIZATION WRAPPERS ---
+def plot_umap_branded(embedding, color_source, title, is_price=True):
+    plt.figure(figsize=(10, 6))
+    if is_price:
+        price_ranks = rankdata(color_source) / len(color_source)
+        scatter = plt.scatter(
+            embedding[:, 0],
+            embedding[:, 1],
+            c=price_ranks,
+            cmap="viridis",
+            s=10,
+            alpha=0.6,
+        )
+        plt.colorbar(scatter).set_label("Price Percentile (0=Low, 1=High)")
+    else:
+        unique_labels = np.unique(color_source)
+        cmap = plt.get_cmap("tab10", len(unique_labels))
+        for i, label in enumerate(unique_labels):
+            mask = color_source == label
+            plt.scatter(
+                embedding[mask, 0],
+                embedding[mask, 1],
+                label=f"Cluster {label}" if label != -1 else "Noise",
+                s=15,
+                alpha=0.8,
+                color=cmap(i),
+            )
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.title(title)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_pca_heatmap(pca_model, df_features):
+    # FIX: Isolate numeric columns specifically to avoid String -> Float errors
+    numeric_df = df_features.select_dtypes(include=[np.number]).fillna(0)
+    kept_columns = numeric_df.columns[numeric_df.var() > 1e-4]
+
+    # Create the loadings dataframe
+    loadings_df = pd.DataFrame(pca_model.components_.T, index=kept_columns)
+
+    plt.figure(figsize=(12, 8))
+    # Show only top 15 features to keep the heatmap readable
+    sns.heatmap(loadings_df.head(15), annot=True, cmap="RdBu_r", center=0, fmt=".2f")
+    plt.title("PCA Loadings: Feature Correlation to Components")
+    plt.show()
+
+
+# --- EXECUTION ---
+# Ensure res_df is defined from the main df_combined
+res_df = df_combined[df_combined["segment"] == "Residential"].copy()
+
+# Drop columns that shouldn't be used for clustering/PCA
+res_features = res_df.drop(
+    columns=["Sold Price", "Adj_Price", "Trended_Price", "List Number", "ParcelId"],
+    errors="ignore",
+)
+
+res_scaled = get_scaled_data(res_features)
+res_pca_model = PCA(n_components=0.9).fit(res_scaled)
+res_pca_data = res_pca_model.transform(res_scaled)
+res_emb_l = get_umap_embedding(res_scaled, nn=15, md=0.01)
+res_l_clusters = get_clusters(res_pca_data, min_size=30)
+res_target = res_df["Trended_Price"]
+```
+
+## Purposes of Exploratory Analysis
+
+- Validation of Structural Drivers: After trending prices to the 2026 Lien Date, we use Pearson Correlation to confirm that physical characteristics (SqFt, Year Built) are the primary determinants of value, independent of market volatility.
+- Identification of Feature Interactions: Real estate value is rarely additive. EDA reveals how variables "handshake". An example of this is how the value of a Finished Basement is conditional on the Total GLA of the home.
+- Normalization & Transformation: We identify the need for Log-Scale Transformations. This ensures "Vertical Equity," meaning the model treats a 5% valuation error on a starter home with the same statistical weight as a 5% error on a luxury estate.
+
+## Visual One
+
+```{python}
+# | label: umap-viz-execution
+# | fig-align: center
+
+plot_umap_branded(res_emb_l, res_l_clusters, "Archetype Clusters", is_price=False)
+plot_umap_branded(res_emb_l, res_target, "Price Gradient", is_price=True)
+```
+
+## Visual 2
+
+```{python}
+# | label: pca-heatmap
+# | fig-height: 8
+
+plot_pca_heatmap(res_pca_model, res_features)
+```
+
+
+# Model Selection & Strategy
+
+## Comparing Models
+We discussed three distinct architectures to determine which could best model the Iron County real estate.
+
+1. Elastic Net: A hybrid of Lasso and Ridge regression. It handles it handles overlapping variables by penalizing redundant variables. It is excellent for transparency, but struggles with the "curvy" non-linear nature of modern market shifts.
+
+2. Random Forest Trains 100+ independent decision trees on random subsets of data and averages their "votes." It captures feature fnteractions. It understands that a "3rd Garage Bay" adds more value to a luxury ranch than to a high-density efficiency unit.
+
+3. Gradient Boosting Trees are built sequentially. Each new tree specifically targets the "errors" of the previous one to minimize the Mean Absolute Error. Gradient Boosting is very precise. It pushes the $R^2$ to its mathematical limit by refining the model's focus on outliers.
+
+
+## Our Choice: Random Forest
+
+> **Why?** While Gradient Boosting offers slightly higher precision, Random Forest provides superior stability. It is less prone to "overfitting" (hallucinating patterns in the noise), ensuring our valuations are both accurate and statistically defensible.
+
+## Waterfall Plot
+
+- A vizualization
+
+## Next Steps
+
+- Advanced Segmentation: We want to segment housing data by more than just its current market. We plan to implement geographical segments
+
+- Explainable AI for Taxpayers: We want to make our model more transparent for taxpayers. We will accomplish this by deploying SHAP Waterfall plots as an "Itemized Receipt." This allows the Assessor's office to show a homeowner exactly how much each feature contributed to their specific valuation.
