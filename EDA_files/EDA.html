@@ -1,0 +1,4986 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.7.32">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Ryan McMurray">
+
+<title>EDA</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="EDA_files/libs/clipboard/clipboard.min.js"></script>
+<script src="EDA_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="EDA_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="EDA_files/libs/quarto-html/popper.min.js"></script>
+<script src="EDA_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="EDA_files/libs/quarto-html/anchor.min.js"></script>
+<link href="EDA_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="EDA_files/libs/quarto-html/quarto-syntax-highlighting-37eea08aefeeee20ff55810ff984fec1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="EDA_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="EDA_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="EDA_files/libs/bootstrap/bootstrap-813c323200a87c37e262811031999de4.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#import-and-clean-the-land-sales-data" id="toc-import-and-clean-the-land-sales-data" class="nav-link active" data-scroll-target="#import-and-clean-the-land-sales-data">Import and Clean the Land Sales Data</a></li>
+  <li><a href="#land-sales-data" id="toc-land-sales-data" class="nav-link" data-scroll-target="#land-sales-data">Land Sales Data</a>
+  <ul class="collapse">
+  <li><a href="#columns-before-the-clean" id="toc-columns-before-the-clean" class="nav-link" data-scroll-target="#columns-before-the-clean">Columns Before the Clean</a></li>
+  <li><a href="#columns-after-the-clean" id="toc-columns-after-the-clean" class="nav-link" data-scroll-target="#columns-after-the-clean">Columns After the Clean</a></li>
+  <li><a href="#univariate-eda" id="toc-univariate-eda" class="nav-link" data-scroll-target="#univariate-eda">Univariate EDA</a></li>
+  <li><a href="#eda-heatmap" id="toc-eda-heatmap" class="nav-link" data-scroll-target="#eda-heatmap">EDA Heatmap</a></li>
+  <li><a href="#quick-thoughts" id="toc-quick-thoughts" class="nav-link" data-scroll-target="#quick-thoughts">Quick Thoughts</a></li>
+  </ul></li>
+  <li><a href="#multi-family-eda" id="toc-multi-family-eda" class="nav-link" data-scroll-target="#multi-family-eda">Multi Family EDA</a>
+  <ul class="collapse">
+  <li><a href="#columns-preclean" id="toc-columns-preclean" class="nav-link" data-scroll-target="#columns-preclean">Columns Preclean</a></li>
+  <li><a href="#columns-post-clean" id="toc-columns-post-clean" class="nav-link" data-scroll-target="#columns-post-clean">Columns Post Clean</a></li>
+  <li><a href="#univariate-family-eda" id="toc-univariate-family-eda" class="nav-link" data-scroll-target="#univariate-family-eda">Univariate Family EDA</a></li>
+  <li><a href="#heatmap" id="toc-heatmap" class="nav-link" data-scroll-target="#heatmap">Heatmap</a></li>
+  </ul></li>
+  <li><a href="#residential-sells" id="toc-residential-sells" class="nav-link" data-scroll-target="#residential-sells">Residential Sells</a>
+  <ul class="collapse">
+  <li><a href="#preclean" id="toc-preclean" class="nav-link" data-scroll-target="#preclean">Preclean</a></li>
+  <li><a href="#postclean" id="toc-postclean" class="nav-link" data-scroll-target="#postclean">Postclean</a></li>
+  <li><a href="#univariate-exploration" id="toc-univariate-exploration" class="nav-link" data-scroll-target="#univariate-exploration">Univariate Exploration</a></li>
+  <li><a href="#heatmap-1" id="toc-heatmap-1" class="nav-link" data-scroll-target="#heatmap-1">Heatmap</a></li>
+  </ul></li>
+  <li><a href="#prepared-sales" id="toc-prepared-sales" class="nav-link" data-scroll-target="#prepared-sales">Prepared Sales</a>
+  <ul class="collapse">
+  <li><a href="#preclean-1" id="toc-preclean-1" class="nav-link" data-scroll-target="#preclean-1">Preclean</a></li>
+  <li><a href="#post-clean" id="toc-post-clean" class="nav-link" data-scroll-target="#post-clean">Post Clean</a></li>
+  <li><a href="#univariate-eda-1" id="toc-univariate-eda-1" class="nav-link" data-scroll-target="#univariate-eda-1">Univariate EDA</a></li>
+  <li><a href="#heatmap-2" id="toc-heatmap-2" class="nav-link" data-scroll-target="#heatmap-2">Heatmap</a></li>
+  </ul></li>
+  </ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">EDA</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Ryan McMurray </p>
+          </div>
+  </div>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="import-and-clean-the-land-sales-data" class="level2">
+<h2 class="anchored" data-anchor-id="import-and-clean-the-land-sales-data">Import and Clean the Land Sales Data</h2>
+</section>
+<section id="land-sales-data" class="level2">
+<h2 class="anchored" data-anchor-id="land-sales-data">Land Sales Data</h2>
+<section id="columns-before-the-clean" class="level3">
+<h3 class="anchored" data-anchor-id="columns-before-the-clean">Columns Before the Clean</h3>
+<div id="53119720" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-stdout">
+<pre><code>['List Number', 'Agency Name', 'Agency Phone', 'Agency Email', 'Listing Agent', 'Listing Agent Phone', 'Listing Agent Email', 'Co-Listing Agent', 'Property Type', 'Card Format', 'Book Section', 'Selling Agency', 'Selling Agency Phone', 'Selling Agency Email', 'Selling Agent', 'Selling Agent Phone', 'Selling Agent Email', 'Co-Selling Agent', 'End Date', 'Sub Type', 'Listing Date', 'Sold Date', 'Under Contract Date', 'Fallthrough Date', 'Status', 'Status Change Date', 'Withdrawal Date', 'Cancel Date', 'Contingent', 'Contingent Remarks', 'Original List Price', 'List Price', 'Sold Price', 'How Sold', 'MLS Area', 'St. #', 'St. Dir.', 'Street Name', 'Address 2', 'Street Direction Sfx', 'Street Suffix', 'City', 'State/Province', 'County', 'Postal Code', 'Total SqFt', 'Basement SqFt', 'Main SqFt', 'Upstairs SqFt', 'Year Built', 'Lot Dimensions', 'Lot Acres', 'Total Bedrooms', 'Full Baths', 'Half Baths', 'Garage Type', 'Zoned', 'Total Taxes', 'Subdivision', 'Public Remarks', 'Private Remarks', 'Parcel Number', 'Directions', 'Owner', 'Tax Serial #', 'mod_timestamp', 'For Sale or Rent', 'HOA', 'Basement', 'Fireplaces', 'Square Foot Source', 'PUD', 'Elementary', 'Senior Community', 'Jr. High', 'Sr. High', 'Listing Type', 'Sold Price Per/SqFt', 'HOA Dues $', 'Garage Capacity', 'Special Taxes (SID)$', 'Lofts', 'Concessions', 'Financing Remarks', 'HOA Dues Frequency', 'Owner/Agent', 'Marketing Begin Date', 'Delayed Marketing Exempt Listing', 'Concessions Amount', 'Concessions Available', 'Photo URL', 'Days on Market', 'Rooms', 'Features', 'Bsmt % Finish', 'Fireplaces2', 'Kitchens', 'Laundry', '3/4 Baths', 'Full Baths3', 'Concessions4', 'Parcel ID Check', 'Road Condition', 'Accessability', 'Address']</code></pre>
+</div>
+</div>
+<div id="6c3a82d4" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-stdout">
+<pre><code>['List Number', 'Agency Name', 'Agency Phone', 'Agency Email', 'Listing Agent', 'Listing Agent Phone', 'Listing Agent Email', 'Co-Listing Agent', 'Property Type', 'Card Format', 'Book Section', 'Selling Agency', 'Selling Agency Phone', 'Selling Agency Email', 'Selling Agent', 'Selling Agent Phone', 'Selling Agent Email', 'Co-Selling Agent', 'End Date', 'Sub Type', 'Listing Date', 'Sold Date', 'Under Contract Date', 'Fallthrough Date', 'Status', 'Status Change Date', 'Withdrawal Date', 'Cancel Date', 'Contingent', 'Contingent Remarks', 'Original List Price', 'List Price', 'Sold Price', 'How Sold', 'MLS Area', 'St. #', 'St. Dir.', 'Street Name', 'Address 2', 'Street Direction Sfx', 'Street Suffix', 'City', 'State/Province', 'County', 'Postal Code', 'Total SqFt', 'Basement SqFt', 'Main SqFt', 'Upstairs SqFt', 'Year Built', 'Lot Dimensions', 'Lot Acres', 'Total Bedrooms', 'Full Baths', 'Half Baths', 'Garage Type', 'Zoned', 'Total Taxes', 'Subdivision', 'Public Remarks', 'Private Remarks', 'Parcel Number', 'Directions', 'Owner', 'Tax Serial #', 'mod_timestamp', 'For Sale or Rent', 'HOA', 'Basement', 'Fireplaces', 'Square Foot Source', 'PUD', 'Elementary', 'Senior Community', 'Jr. High', 'Sr. High', 'Listing Type', 'Sold Price Per/SqFt', 'HOA Dues $', 'Garage Capacity', 'Special Taxes (SID)$', 'Lofts', 'Concessions', 'Financing Remarks', 'HOA Dues Frequency', 'Owner/Agent', 'Marketing Begin Date', 'Delayed Marketing Exempt Listing', 'Concessions Amount', 'Concessions Available', 'Photo URL', 'Days on Market', 'Rooms', 'Features', 'Bsmt % Finish', 'Fireplaces2', 'Kitchens', 'Laundry', '3/4 Baths', 'Full Baths3', 'Concessions4', 'Parcel ID Check', 'Road Condition', 'Accessability', 'Address']</code></pre>
+</div>
+</div>
+</section>
+<section id="columns-after-the-clean" class="level3">
+<h3 class="anchored" data-anchor-id="columns-after-the-clean">Columns After the Clean</h3>
+</section>
+<section id="univariate-eda" class="level3">
+<h3 class="anchored" data-anchor-id="univariate-eda">Univariate EDA</h3>
+<div id="489cd638" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset shape: (7772, 58)
+
+======================================================================
+Sub Type
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+Sub Type
+SF    6061
+CT    1500
+CN     211
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-2.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Listing Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1355
+High cardinality — showing top 15 only
+Listing Date
+2024-11-07    23
+2024-04-05    22
+2024-04-24    20
+2023-05-12    20
+2022-03-22    20
+2022-02-14    20
+2022-05-06    20
+2022-01-19    19
+2022-02-16    19
+2024-02-16    19
+2023-07-14    18
+2025-03-21    18
+2025-05-19    18
+2025-04-23    18
+2024-09-27    18
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-4.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Under Contract Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1459
+High cardinality — showing top 15 only
+Under Contract Date
+2025-09-09    26
+2025-10-06    25
+2024-11-07    23
+2024-04-16    21
+2022-01-19    20
+2025-09-12    20
+2025-10-07    20
+2025-09-16    19
+2022-02-16    16
+2025-09-26    16
+2025-09-22    16
+2025-09-30    15
+2025-10-24    15
+2025-09-19    15
+2025-10-13    15
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-6.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Contingent
+----------------------------------------------------------------------
+Missing: 47.3% | Unique values: 3
+Contingent
+N    3168
+B     920
+S       6
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-8.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Contingent Remarks
+----------------------------------------------------------------------
+Missing: 98.7% | Unique values: 61
+High cardinality — showing top 15 only
+Contingent Remarks
+Subject to Sale         11
+subject to sale          8
+*subject to sale         7
+Time Clause              5
+none                     4
+Subject to sale          3
+Taking Back Up Offer     3
+72 hour time clause      2
+Financing                2
+48 hour time clause      2
+72 hour clause           2
+Subject to Sell          2
+*subject-2-sale &amp; TC     1
+TIME CLAUSE              1
+Seller Finance Terms     1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-10.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Original List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1464
+count    7.772000e+03
+mean     5.108431e+05
+std      3.574904e+05
+min      8.900000e+01
+25%      3.300000e+05
+50%      4.349000e+05
+75%      5.990000e+05
+max      8.750000e+06
+Name: Original List Price, dtype: float64
+Correlation with Sold Price: 0.878</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-12.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-13.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1459
+count    7.772000e+03
+mean     4.932869e+05
+std      3.085159e+05
+min      1.650000e+03
+25%      3.250000e+05
+50%      4.250000e+05
+75%      5.750000e+05
+max      7.850000e+06
+Name: List Price, dtype: float64
+Correlation with Sold Price: 0.966</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-15.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-16.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+How Sold
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+How Sold
+CONV          4025
+CASH          2291
+FHA            785
+VA             400
+Other          108
+Own Fin         91
+Utah Hsng       41
+C for Deed      13
+Owner 1st       10
+Assumption       4
+Farm Home        3
+Lease Pur        1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-18.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+MLS Area
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+count    7772.000000
+mean        5.669840
+std         4.541985
+min         1.000000
+25%         1.000000
+50%         5.000000
+75%        11.000000
+max        12.000000
+Name: MLS Area, dtype: float64
+Correlation with Sold Price: 0.225</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-20.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-21.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+St. Dir.
+----------------------------------------------------------------------
+Missing: 6.2% | Unique values: 4
+St. Dir.
+W    2215
+N    2068
+S    1723
+E    1282
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-23.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Street Name
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2434
+High cardinality — showing top 15 only
+Street Name
+200     147
+100     122
+300      93
+400      90
+Main     74
+May      68
+25       65
+275      55
+250      54
+175      51
+1225     49
+700      48
+1100     45
+500      45
+4375     42
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-25.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Street Direction Sfx
+----------------------------------------------------------------------
+Missing: 60.5% | Unique values: 4
+Street Direction Sfx
+N    1076
+W     954
+S     546
+E     494
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-27.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Street Suffix
+----------------------------------------------------------------------
+Missing: 56.0% | Unique values: 13
+Street Suffix
+Drive        1460
+Road          438
+Street        399
+Lane          338
+Circle        300
+Way           149
+Trail          89
+Parkway        70
+Boulevard      43
+Loop           41
+Court          40
+Avenue         33
+Place          21
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-29.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+City
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 104
+High cardinality — showing top 15 only
+City
+Cedar City            3286
+St George             1192
+Washington             546
+Enoch                  527
+Hurricane              380
+Brian Head             332
+Duck Creek Village     202
+Parowan                180
+Beaver                 163
+Ivins                  120
+Santa Clara             73
+New Harmony             68
+Milford                 58
+Panguitch               57
+La Verkin               53
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-31.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+County
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 19
+High cardinality — showing top 15 only
+County
+Iron          4408
+Washington    2642
+Beaver         251
+Kane           234
+Garfield       112
+Utah            30
+Salt Lake       23
+Piute           17
+Sevier          17
+Millard         13
+Weber            6
+Wayne            5
+Davis            4
+Sanpete          4
+Carbon           2
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-33.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2650
+count     7772.000000
+mean      2083.458698
+std       1028.441542
+min          0.000000
+25%       1420.000000
+50%       1810.000000
+75%       2536.000000
+max      15686.000000
+Name: Total SqFt, dtype: float64
+Correlation with Sold Price: 0.684</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-35.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-36.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Basement SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1014
+count     7772.000000
+mean       338.369391
+std        651.894567
+min          0.000000
+25%          0.000000
+50%          0.000000
+75%        408.000000
+max      10367.000000
+Name: Basement SqFt, dtype: float64
+Correlation with Sold Price: 0.276</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-38.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-39.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Main SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2160
+count    7772.000000
+mean     1445.468830
+std       671.047471
+min         0.000000
+25%       922.750000
+50%      1427.000000
+75%      1821.250000
+max      8860.000000
+Name: Main SqFt, dtype: float64
+Correlation with Sold Price: 0.661</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-41.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-42.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Upstairs SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 885
+count    7771.000000
+mean      300.725663
+std       477.386935
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%       667.000000
+max      4546.000000
+Name: Upstairs SqFt, dtype: float64
+Correlation with Sold Price: 0.172</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-44.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-45.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Year Built
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 145
+count    7772.000000
+mean     2001.721436
+std        58.688489
+min         0.000000
+25%      1994.000000
+50%      2007.000000
+75%      2022.000000
+max      2026.000000
+Name: Year Built, dtype: float64
+Correlation with Sold Price: 0.079</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-47.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-48.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Lot Acres
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 392
+count    7772.000000
+mean        0.737477
+std         4.890375
+min         0.000000
+25%         0.070000
+50%         0.220000
+75%         0.400000
+max       301.380000
+Name: Lot Acres, dtype: float64
+Correlation with Sold Price: 0.179</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-50.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-51.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Bedrooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+count    7772.000000
+mean        3.400283
+std         1.169890
+min         0.000000
+25%         3.000000
+50%         3.000000
+75%         4.000000
+max        11.000000
+Name: Total Bedrooms, dtype: float64
+Correlation with Sold Price: 0.457</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-53.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-54.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Full Baths
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+count    7772.000000
+mean        2.240221
+std         0.842393
+min         0.000000
+25%         2.000000
+50%         2.000000
+75%         3.000000
+max        31.000000
+Name: Full Baths, dtype: float64
+Correlation with Sold Price: 0.569</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-56.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-57.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Half Baths
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 6
+count    7772.000000
+mean        0.344570
+std         0.510757
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         1.000000
+max         9.000000
+Name: Half Baths, dtype: float64
+Correlation with Sold Price: 0.191</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-59.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-60.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Garage Type
+----------------------------------------------------------------------
+Missing: 13.1% | Unique values: 4
+Garage Type
+Attach    5741
+Carpor     452
+Detach     451
+Bsmt       113
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-62.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Zoned
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 322
+High cardinality — showing top 15 only
+Zoned
+Residential    2834
+R-1             643
+R               566
+R1              385
+Res             346
+R3              340
+RES             294
+residential     166
+R-3             158
+R-3-M           117
+res             116
+R-2             110
+R-1-11          108
+R-2-1           100
+R-2-2            95
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-64.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Taxes
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 5600
+count      7772.000000
+mean       1819.830989
+std       11912.258999
+min           0.000000
+25%         706.912500
+50%        1358.555000
+75%        2125.000000
+max      784828.000000
+Name: Total Taxes, dtype: float64
+Correlation with Sold Price: 0.108</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-66.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-67.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Subdivision
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 717
+High cardinality — showing top 15 only
+Subdivision
+Not Applicable        1683
+Old Sorrel Ranch       259
+Iron West              119
+Settlers Square        116
+Cedar Bend             115
+Crescent Hills          88
+Shadow Cove             75
+Sun River               69
+Trailside               63
+Gemini Meadows          56
+Saddleback Ridge        55
+Sycamore Trail          54
+Mid Valley Estates      51
+Iron Mountain           50
+Hurricane Townsite      50
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-69.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+For Sale or Rent
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+For Sale or Rent
+For Sale    7759
+For Rent      13
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-71.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+HOA
+No     4059
+Yes    3713
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-73.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Basement
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+Basement
+No     5712
+Yes    2060
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-75.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Fireplaces
+----------------------------------------------------------------------
+Missing: 50.5% | Unique values: 4
+Fireplaces
+One             3099
+Two              418
+Woodstove        242
+Three or Mor      90
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-77.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Square Foot Source
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+Square Foot Source
+County Records    4854
+Builder           2080
+Owner              607
+Appraiser          231
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-79.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+PUD
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+PUD
+No     6175
+Yes    1597
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-81.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Elementary
+----------------------------------------------------------------------
+Missing: 34.3% | Unique values: 59
+High cardinality — showing top 15 only
+Elementary
+Three Peaks        463
+Cedar North        427
+Iron Springs       405
+Cedar South        344
+Fiddlers Canyon    313
+Enoch              309
+Parowan            298
+Coral Canyon       199
+Cedar East         167
+Sandstone          145
+Red Mountain       137
+Hurricane          136
+Bloomington        135
+Three Falls        125
+Belknap            117
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-83.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Senior Community
+----------------------------------------------------------------------
+Missing: 56.5% | Unique values: 2
+Senior Community
+No     3137
+Yes     247
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-85.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Jr. High
+----------------------------------------------------------------------
+Missing: 34.5% | Unique values: 26
+High cardinality — showing top 15 only
+Jr. High
+Cedar             1330
+Canyon View       1201
+Hurricane          406
+Dixie              384
+Pine View          355
+Snow Canyon        288
+Parowan            260
+Desert Hills       203
+Crimson Cliffs     134
+Beaver             125
+Tonaquint           62
+Fossil Ridge        61
+Enterprise          60
+Lava Ridge          49
+Valley              44
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-87.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Sr. High
+----------------------------------------------------------------------
+Missing: 32.6% | Unique values: 25
+High cardinality — showing top 15 only
+Sr. High
+Cedar             1359
+Canyon View       1209
+Dixie              443
+Pine View          417
+Hurricane          405
+Snow Canyon        337
+Parowan            292
+Desert Hills       205
+Beaver             140
+Crimson Cliffs     134
+Enterprise          85
+Valley              72
+Milford             47
+Panguitch           41
+Piute               21
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-89.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Listing Type
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+Listing Type
+ER    7556
+EA     213
+SP       3
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-91.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Sold Price Per/SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 6028
+count      7771.000000
+mean        488.214719
+std       10953.349359
+min           0.000000
+25%         186.810000
+50%         233.330000
+75%         281.470000
+max      515000.000000
+Name: Sold Price Per/SqFt, dtype: float64
+Correlation with Sold Price: 0.041</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-93.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-94.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA Dues $
+----------------------------------------------------------------------
+Missing: 52.2% | Unique values: 483
+count    3713.000000
+mean      181.474142
+std       343.075057
+min         0.000000
+25%        73.000000
+50%       120.000000
+75%       195.000000
+max      5000.000000
+Name: HOA Dues $, dtype: float64
+Correlation with Sold Price: 0.030</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-96.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-97.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Garage Capacity
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 30
+count    7772.000000
+mean        2.453592
+std        26.347190
+min         0.000000
+25%         2.000000
+50%         2.000000
+75%         3.000000
+max      2005.000000
+Name: Garage Capacity, dtype: float64
+Correlation with Sold Price: 0.041</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-99.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-100.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Special Taxes (SID)$
+----------------------------------------------------------------------
+Missing: 94.6% | Unique values: 15
+count       419.000000
+mean       1262.723508
+std       23977.331286
+min           0.000000
+25%           0.000000
+50%           0.000000
+75%           0.000000
+max      490000.000000
+Name: Special Taxes (SID)$, dtype: float64
+Correlation with Sold Price: 0.003</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-102.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-103.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Lofts
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 6
+count    7772.000000
+mean        0.454066
+std        19.459300
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         0.000000
+max      1267.000000
+Name: Lofts, dtype: float64
+Correlation with Sold Price: 0.027</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-105.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-106.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Concessions
+----------------------------------------------------------------------
+Missing: 14.6% | Unique values: 1163
+High cardinality — showing top 15 only
+Concessions
+0        2706
+no        508
+none      431
+No        241
+10000     207
+5000      188
+15000      71
+4000       57
+7000       51
+2000       43
+3000       42
+6000       41
+1000       39
+8000       39
+NONE       32
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-108.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Financing Remarks
+----------------------------------------------------------------------
+Missing: 97.3% | Unique values: 172
+High cardinality — showing top 15 only
+Financing Remarks
+PLI                                                              12
+1031 Exchange                                                     5
+USDA                                                              5
+9k PLI                                                            4
+na                                                                3
+1031 exchange                                                     3
+Closing Costs                                                     3
+$10,000 seller paid closing costs                                 2
+Preferred Lender Incentive 4,000 towards closing costs            2
+Some 1031                                                         2
+$5000 Seller paid concessions. $650 Seller paid Home Warranty     2
+Cash                                                              2
+Loan                                                              2
+Freddie Mac loan                                                  2
+none                                                              2
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-110.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA Dues Frequency
+----------------------------------------------------------------------
+Missing: 52.2% | Unique values: 3
+HOA Dues Frequency
+Monthly      3143
+Annually      492
+Quarterly      78
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-112.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Owner/Agent
+----------------------------------------------------------------------
+Missing: 38.6% | Unique values: 2
+Owner/Agent
+N    4296
+Y     478
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-114.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Concessions Available
+----------------------------------------------------------------------
+Missing: 100.0% | Unique values: 2
+Concessions Available
+Y    1
+N    1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-116.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Days on Market
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 388
+count    7772.000000
+mean       57.510679
+std        75.222308
+min       -54.000000
+25%         8.000000
+50%        30.000000
+75%        78.000000
+max       969.000000
+Name: Days on Market, dtype: float64
+Correlation with Sold Price: 0.050</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-118.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-119.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Fireplaces2
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+count    7772.000000
+mean        0.572182
+std         0.649530
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         1.000000
+max         3.000000
+Name: Fireplaces2, dtype: float64
+Correlation with Sold Price: 0.360</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-121.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-122.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Kitchens
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+count    7772.000000
+mean        1.027406
+std         0.167936
+min         1.000000
+25%         1.000000
+50%         1.000000
+75%         1.000000
+max         3.000000
+Name: Kitchens, dtype: float64
+Correlation with Sold Price: 0.114</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-124.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-125.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Laundry
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+count    7772.000000
+mean        1.020072
+std         0.144771
+min         1.000000
+25%         1.000000
+50%         1.000000
+75%         1.000000
+max         4.000000
+Name: Laundry, dtype: float64
+Correlation with Sold Price: 0.179</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-127.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-128.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+3/4 Baths
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 5
+count    7772.000000
+mean        0.064462
+std         0.301565
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         0.000000
+max         4.000000
+Name: 3/4 Baths, dtype: float64
+Correlation with Sold Price: 0.079</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-130.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-131.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Full Baths3
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 13
+count    7772.000000
+mean        2.175759
+std         0.867633
+min        -1.000000
+25%         2.000000
+50%         2.000000
+75%         2.000000
+max        31.000000
+Name: Full Baths3, dtype: float64
+Correlation with Sold Price: 0.525</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-133.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-134.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Road Condition
+----------------------------------------------------------------------
+Missing: 10.4% | Unique values: 2
+Road Condition
+Paved         6819
+Unimproved     144
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-136.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Accessability
+----------------------------------------------------------------------
+Missing: 43.6% | Unique values: 2
+Accessability
+Year Round    4296
+Seasonal        90
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-7-output-138.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="eda-heatmap" class="level3">
+<h3 class="anchored" data-anchor-id="eda-heatmap">EDA Heatmap</h3>
+<div id="d5792b39" class="cell" data-execution_count="7">
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-8-output-1.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="quick-thoughts" class="level3">
+<h3 class="anchored" data-anchor-id="quick-thoughts">Quick Thoughts</h3>
+<p>Most of the boolean data is unbalanced a lot of the data is dratically skewed to the right. This makes sense beacause mansions dwarf regular houses. As far as heatmap goes the prices are all highly correlated. Anything with the word sqft is correlated with price. Bedrooms and bathrooms correlat with price. Rooms, bathrooms, and sqft all correlate with each other.</p>
+</section>
+</section>
+<section id="multi-family-eda" class="level2">
+<h2 class="anchored" data-anchor-id="multi-family-eda">Multi Family EDA</h2>
+<section id="columns-preclean" class="level3">
+<h3 class="anchored" data-anchor-id="columns-preclean">Columns Preclean</h3>
+<div id="0bb15413" class="cell" data-execution_count="8">
+<div class="cell-output cell-output-stdout">
+<pre><code>['List Number', 'Agency Name', 'Agency Phone', 'Agency Email', 'Listing Agent', 'Listing Agent Phone', 'Listing Agent Email', 'Co-Listing Agent', 'Property Type', 'Card Format', 'Book Section', 'Selling Agency', 'Selling Agency Phone', 'Selling Agency Email', 'Selling Agent', 'Selling Agent Phone', 'Selling Agent Email', 'Co-Selling Agent', 'End Date', 'Type', 'Listing Date', 'Sold Date', 'Under Contract Date', 'Fallthrough Date', 'Status', 'Status Change Date', 'Withdrawal Date', 'Cancel Date', 'Contingent', 'Contingent Remarks', 'Original List Price', 'List Price', 'Sold Price', 'How Sold', 'MLS Area', 'St. #', 'St. Dir.', 'Street Name', 'Address 2', 'Street Direction Sfx', 'Street Suffix', 'City', 'State/Province', 'County', 'Postal Code', 'Finished SqFt', 'Year Built', 'Lot Dimensions', 'Lot Acres', 'Total Units', 'Parking Covered', 'Covered Parking', 'Parking Uncovered', 'Zoned', 'Total Taxes', 'Subdivision', 'Public Remarks', 'Private Remarks', 'Parcel Number', 'Directions', 'Owner', 'Concessions', 'Tax Serial #', 'mod_timestamp', 'For Sale or Rent', 'HOA', 'Square Foot Source', 'PUD', 'Laundry', 'Elementary', 'Senior Community', 'Jr. High', 'Sr. High', 'Utilities', 'Listing Type', 'Sold Price Per/SqFt', 'HOA Dues $', 'Special Taxes (SID)$', 'Financing Remarks', 'HOA Dues Frequency', 'Owner/Agent', 'Marketing Begin Date', 'Delayed Marketing Exempt Listing', 'Concessions Amount', 'Concessions Available', 'Photo URL', 'Days on Market', 'Rooms', 'Features']</code></pre>
+</div>
+</div>
+</section>
+<section id="columns-post-clean" class="level3">
+<h3 class="anchored" data-anchor-id="columns-post-clean">Columns Post Clean</h3>
+<div id="afaa734e" class="cell" data-execution_count="9">
+<div class="cell-output cell-output-stdout">
+<pre><code>['Type', 'Listing Date', 'Under Contract Date', 'Contingent', 'Original List Price', 'List Price', 'Sold Price', 'How Sold', 'MLS Area', 'St. Dir.', 'City', 'County', 'Finished SqFt', 'Year Built', 'Lot Acres', 'Total Units', 'Parking Covered', 'Covered Parking', 'Parking Uncovered', 'Zoned', 'Total Taxes', 'Subdivision', 'Concessions', 'HOA', 'Square Foot Source', 'PUD', 'Laundry', 'Elementary', 'Jr. High', 'Sr. High', 'HOA Dues $', 'Special Taxes (SID)$', 'HOA Dues Frequency', 'Owner/Agent', 'Days on Market']</code></pre>
+</div>
+</div>
+</section>
+<section id="univariate-family-eda" class="level3">
+<h3 class="anchored" data-anchor-id="univariate-family-eda">Univariate Family EDA</h3>
+<div id="d3bab8fb" class="cell" data-execution_count="10">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset shape: (79, 35)
+
+======================================================================
+Type
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+Type
+MU    65
+DU    11
+AP     3
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-2.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Listing Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 76
+High cardinality — showing top 15 only
+Listing Date
+2022-04-11    2
+2021-11-23    2
+2023-06-13    2
+2025-09-25    1
+2022-02-09    1
+2022-02-10    1
+2022-03-23    1
+2022-03-21    1
+2022-04-02    1
+2022-05-09    1
+2022-01-21    1
+2022-01-18    1
+2022-05-11    1
+2022-05-13    1
+2022-08-05    1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-4.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Under Contract Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 73
+High cardinality — showing top 15 only
+Under Contract Date
+2023-06-17    3
+2025-04-18    2
+2025-06-06    2
+2021-11-30    2
+2022-05-01    2
+2025-09-29    1
+2022-01-24    1
+2022-02-16    1
+2022-01-27    1
+2022-04-11    1
+2022-04-18    1
+2022-04-20    1
+2022-03-20    1
+2022-06-16    1
+2022-08-10    1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-6.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Contingent
+----------------------------------------------------------------------
+Missing: 35.4% | Unique values: 2
+Contingent
+N    40
+B    11
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-8.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Original List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 67
+count    7.900000e+01
+mean     6.234702e+05
+std      3.710073e+05
+min      5.500000e+02
+25%      3.999950e+05
+50%      4.959000e+05
+75%      6.995030e+05
+max      1.800000e+06
+Name: Original List Price, dtype: float64
+Correlation with Sold Price: 0.946</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-10.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-11.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 65
+count    7.900000e+01
+mean     6.160499e+05
+std      3.484564e+05
+min      1.950000e+05
+25%      3.999000e+05
+50%      4.959000e+05
+75%      6.675035e+05
+max      1.650000e+06
+Name: List Price, dtype: float64
+Correlation with Sold Price: 0.965</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-13.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-14.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+How Sold
+----------------------------------------------------------------------
+Missing: 6.3% | Unique values: 7
+How Sold
+CONV          39
+CASH          27
+FHA            3
+Owner 1st      2
+Own Fin        1
+Other          1
+C for Deed     1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-16.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+MLS Area
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 6
+count    79.000000
+mean      3.037975
+std       3.837878
+min       1.000000
+25%       1.000000
+50%       1.000000
+75%       1.000000
+max      12.000000
+Name: MLS Area, dtype: float64
+Correlation with Sold Price: -0.117</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-18.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-19.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+St. Dir.
+----------------------------------------------------------------------
+Missing: 2.5% | Unique values: 4
+St. Dir.
+N    26
+W    19
+S    17
+E    15
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-21.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+City
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+City
+Cedar City        61
+Parowan            3
+Beaver             3
+Provo              2
+Panguitch          2
+Milford            2
+Hildale            1
+Delta              1
+Salt Lake City     1
+Washington         1
+Hurricane          1
+Minersville        1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-23.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+County
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 7
+County
+Iron          64
+Beaver         6
+Washington     3
+Utah           2
+Garfield       2
+Millard        1
+Salt Lake      1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-25.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Finished SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 73
+count      79.000000
+mean     3236.645570
+std      1795.259377
+min      1171.000000
+25%      2073.000000
+50%      2639.000000
+75%      3828.000000
+max      8671.000000
+Name: Finished SqFt, dtype: float64
+Correlation with Sold Price: 0.859</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-27.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-28.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Year Built
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 51
+count      79.000000
+mean     1983.759494
+std        29.041621
+min      1904.000000
+25%      1965.000000
+50%      1992.000000
+75%      2006.000000
+max      2024.000000
+Name: Year Built, dtype: float64
+Correlation with Sold Price: 0.534</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-30.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-31.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Lot Acres
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 37
+count    79.000000
+mean      0.270380
+std       0.236776
+min       0.010000
+25%       0.175000
+50%       0.210000
+75%       0.295000
+max       1.930000
+Name: Lot Acres, dtype: float64
+Correlation with Sold Price: 0.279</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-33.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-34.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Units
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 9
+count    79.000000
+mean      3.113924
+std       2.407187
+min       1.000000
+25%       2.000000
+50%       2.000000
+75%       4.000000
+max      18.000000
+Name: Total Units, dtype: float64
+Correlation with Sold Price: 0.496</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-36.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-37.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Parking Covered
+----------------------------------------------------------------------
+Missing: 36.7% | Unique values: 9
+Parking Covered
+0      14
+2      13
+1       8
+4       7
+Yes     3
+8       2
+6       1
+No      1
+no      1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-39.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Covered Parking
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+Covered Parking
+Y    43
+N    36
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-41.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Parking Uncovered
+----------------------------------------------------------------------
+Missing: 53.2% | Unique values: 14
+Parking Uncovered
+4      8
+2      6
+1      5
+8      4
+10     3
+Yes    3
+11     1
+6      1
+0      1
+8+     1
+16     1
+5      1
+4+     1
+3      1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-43.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Zoned
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 28
+High cardinality — showing top 15 only
+Zoned
+R-2             15
+R-2-2           10
+R-3-M            7
+R-3              5
+R2-2             4
+R2               4
+Residential      4
+GC               3
+res              2
+Commercial       2
+R3M              2
+R3               2
+Multi Family     2
+PUD              2
+R-1              2
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-45.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Taxes
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 73
+count      79.000000
+mean     1504.254684
+std      1044.664665
+min         0.000000
+25%       866.685000
+50%      1247.950000
+75%      1811.215000
+max      4833.370000
+Name: Total Taxes, dtype: float64
+Correlation with Sold Price: 0.546</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-47.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-48.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Subdivision
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 29
+High cardinality — showing top 15 only
+Subdivision
+Not Applicable            28
+Cedar City                 8
+Gemini Meadows             4
+Lamplight                  4
+Northwood                  3
+Cedar Crest                3
+Canyon View Subdivis       3
+Sunrise                    2
+Pheasant Run               2
+Pinewood East              2
+Cedar Breaks Townhomes     2
+G R Parry                  1
+Max N Lunt                 1
+Cobble Creek               1
+Lone Tree                  1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-50.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Concessions
+----------------------------------------------------------------------
+Missing: 75.9% | Unique values: 19
+High cardinality — showing top 15 only
+Concessions
+17,000 seller paid closing costs                 1
+12000                                            1
+$10,000. seller paid to buyers closing costs.    1
+CC $3,500                                        1
+$7500 CC                                         1
+none                                             1
+$500 Home Warranty                               1
+seller paid $12600 in CC                         1
+Seller paid $13000 in closing costs.             1
+500 seller credit                                1
+$4,490 towards Buyers Closing Costs              1
+2172                                             1
+$20k seller contribution to buyer                1
+no                                               1
+Seller paid $33000 in closing costs.             1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-52.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+HOA
+No     73
+Yes     6
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-54.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Square Foot Source
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+Square Foot Source
+County Records    60
+Builder            9
+Owner              5
+Appraiser          5
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-56.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+PUD
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+PUD
+No     74
+Yes     5
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-58.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Laundry
+----------------------------------------------------------------------
+Missing: 30.4% | Unique values: 2
+Laundry
+Yes    51
+No      4
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-60.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Elementary
+----------------------------------------------------------------------
+Missing: 41.8% | Unique values: 14
+Elementary
+Three Peaks        8
+Cedar North        8
+Cedar East         8
+Cedar South        4
+Iron Springs       4
+Belknap            3
+Parowan            2
+Milford            2
+Fiddlers Canyon    2
+Delta              1
+Majestic Fields    1
+Hurricane          1
+East Meadows       1
+Panguitch          1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-62.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Jr. High
+----------------------------------------------------------------------
+Missing: 41.8% | Unique values: 8
+Jr. High
+Cedar             22
+Canyon View       15
+Beaver             3
+Milford            2
+Delta              1
+Crimson Cliffs     1
+Hurricane          1
+Panguitch          1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-64.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Sr. High
+----------------------------------------------------------------------
+Missing: 39.2% | Unique values: 9
+Sr. High
+Cedar             22
+Canyon View       15
+Beaver             3
+Milford            2
+Parowan            2
+Delta              1
+Crimson Cliffs     1
+Hurricane          1
+Panguitch          1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-66.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA Dues $
+----------------------------------------------------------------------
+Missing: 92.4% | Unique values: 5
+count      6.000000
+mean     267.000000
+std      168.872733
+min      100.000000
+25%      112.500000
+50%      255.000000
+75%      414.000000
+max      460.000000
+Name: HOA Dues $, dtype: float64
+Correlation with Sold Price: -0.704</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-68.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-69.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Special Taxes (SID)$
+----------------------------------------------------------------------
+Missing: 93.7% | Unique values: 1
+count    5.0
+mean     0.0
+std      0.0
+min      0.0
+25%      0.0
+50%      0.0
+75%      0.0
+max      0.0
+Name: Special Taxes (SID)$, dtype: float64
+Correlation with Sold Price: nan</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-71.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-72.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA Dues Frequency
+----------------------------------------------------------------------
+Missing: 92.4% | Unique values: 1
+HOA Dues Frequency
+Monthly    6
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-74.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Owner/Agent
+----------------------------------------------------------------------
+Missing: 46.8% | Unique values: 2
+Owner/Agent
+N    36
+Y     6
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-76.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Days on Market
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 51
+count     79.000000
+mean      51.506329
+std       70.337624
+min        0.000000
+25%        6.000000
+50%       18.000000
+75%       66.500000
+max      268.000000
+Name: Days on Market, dtype: float64
+Correlation with Sold Price: 0.207</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-78.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-11-output-79.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="heatmap" class="level3">
+<h3 class="anchored" data-anchor-id="heatmap">Heatmap</h3>
+<div id="ad876f4e" class="cell" data-execution_count="11">
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-12-output-1.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="residential-sells" class="level2">
+<h2 class="anchored" data-anchor-id="residential-sells">Residential Sells</h2>
+<section id="preclean" class="level3">
+<h3 class="anchored" data-anchor-id="preclean">Preclean</h3>
+<div id="4a08ede1" class="cell" data-execution_count="12">
+<div class="cell-output cell-output-stdout">
+<pre><code>['List Number', 'Agency Name', 'Agency Phone', 'Agency Email', 'Listing Agent', 'Listing Agent Phone', 'Listing Agent Email', 'Co-Listing Agent', 'Property Type', 'Card Format', 'Book Section', 'Selling Agency', 'Selling Agency Phone', 'Selling Agency Email', 'Selling Agent', 'Selling Agent Phone', 'Selling Agent Email', 'Co-Selling Agent', 'End Date', 'Sub Type', 'Listing Date', 'Sold Date', 'Under Contract Date', 'Fallthrough Date', 'Status', 'Status Change Date', 'Withdrawal Date', 'Cancel Date', 'Contingent', 'Contingent Remarks', 'Original List Price', 'List Price', 'Sold Price', 'How Sold', 'MLS Area', 'St. #', 'St. Dir.', 'Street Name', 'Address 2', 'Street Direction Sfx', 'Street Suffix', 'City', 'State/Province', 'County', 'Postal Code', 'Total SqFt', 'Basement SqFt', 'Main SqFt', 'Upstairs SqFt', 'Year Built', 'Lot Dimensions', 'Lot Acres', 'Total Bedrooms', 'Full Baths', 'Half Baths', 'Garage Type', 'Zoned', 'Total Taxes', 'Subdivision', 'Public Remarks', 'Private Remarks', 'Parcel Number', 'Directions', 'Owner', 'Tax Serial #', 'mod_timestamp', 'For Sale or Rent', 'HOA', 'Basement', 'Fireplaces', 'Square Foot Source', 'PUD', 'Elementary', 'Senior Community', 'Jr. High', 'Sr. High', 'Listing Type', 'Sold Price Per/SqFt', 'HOA Dues $', 'Garage Capacity', 'Special Taxes (SID)$', 'Lofts', 'Concessions', 'Financing Remarks', 'HOA Dues Frequency', 'Owner/Agent', 'Marketing Begin Date', 'Delayed Marketing Exempt Listing', 'Concessions Amount', 'Concessions Available', 'Photo URL', 'Days on Market', 'Rooms', 'Features', 'Bsmt % Finish', 'Fireplaces2', 'Kitchens', 'Laundry', '3/4 Baths', 'Full Baths3', 'Concessions4', 'Parcel ID Check', 'Road Condition', 'Accessability', 'Address']</code></pre>
+</div>
+</div>
+</section>
+<section id="postclean" class="level3">
+<h3 class="anchored" data-anchor-id="postclean">Postclean</h3>
+<div id="5c568456" class="cell" data-execution_count="13">
+<div class="cell-output cell-output-stdout">
+<pre><code>['Sub Type', 'Listing Date', 'Under Contract Date', 'Contingent', 'Original List Price', 'List Price', 'Sold Price', 'How Sold', 'MLS Area', 'St. Dir.', 'City', 'State/Province', 'County', 'Total SqFt', 'Basement SqFt', 'Main SqFt', 'Upstairs SqFt', 'Year Built', 'Lot Acres', 'Total Bedrooms', 'Full Baths', 'Half Baths', 'Garage Type', 'Zoned', 'Total Taxes', 'Subdivision', 'For Sale or Rent', 'HOA', 'Basement', 'Fireplaces', 'Square Foot Source', 'PUD', 'Elementary', 'Senior Community', 'Jr. High', 'Sr. High', 'Listing Type', 'HOA Dues $', 'Garage Capacity', 'Special Taxes (SID)$', 'Lofts', 'Concessions', 'HOA Dues Frequency', 'Owner/Agent', 'Concessions Available', 'Days on Market', 'Bsmt % Finish', 'Fireplaces2', 'Kitchens', 'Laundry', '3/4 Baths', 'Full Baths3', 'Parcel ID Check', 'Road Condition', 'Accessability', 'Address']</code></pre>
+</div>
+</div>
+</section>
+<section id="univariate-exploration" class="level3">
+<h3 class="anchored" data-anchor-id="univariate-exploration">Univariate Exploration</h3>
+<div id="652aa0ed" class="cell" data-execution_count="14">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset shape: (7772, 56)
+
+======================================================================
+Sub Type
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+Sub Type
+SF    6061
+CT    1500
+CN     211
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-2.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Listing Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1355
+High cardinality — showing top 15 only
+Listing Date
+2024-11-07    23
+2024-04-05    22
+2024-04-24    20
+2023-05-12    20
+2022-03-22    20
+2022-02-14    20
+2022-05-06    20
+2022-01-19    19
+2022-02-16    19
+2024-02-16    19
+2023-07-14    18
+2025-03-21    18
+2025-05-19    18
+2025-04-23    18
+2024-09-27    18
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-4.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Under Contract Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1459
+High cardinality — showing top 15 only
+Under Contract Date
+2025-09-09    26
+2025-10-06    25
+2024-11-07    23
+2024-04-16    21
+2022-01-19    20
+2025-09-12    20
+2025-10-07    20
+2025-09-16    19
+2022-02-16    16
+2025-09-26    16
+2025-09-22    16
+2025-09-30    15
+2025-10-24    15
+2025-09-19    15
+2025-10-13    15
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-6.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Contingent
+----------------------------------------------------------------------
+Missing: 47.3% | Unique values: 3
+Contingent
+N    3168
+B     920
+S       6
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-8.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Original List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1464
+count    7.772000e+03
+mean     5.108431e+05
+std      3.574904e+05
+min      8.900000e+01
+25%      3.300000e+05
+50%      4.349000e+05
+75%      5.990000e+05
+max      8.750000e+06
+Name: Original List Price, dtype: float64
+Correlation with Sold Price: 0.878</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-10.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-11.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1459
+count    7.772000e+03
+mean     4.932869e+05
+std      3.085159e+05
+min      1.650000e+03
+25%      3.250000e+05
+50%      4.250000e+05
+75%      5.750000e+05
+max      7.850000e+06
+Name: List Price, dtype: float64
+Correlation with Sold Price: 0.966</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-13.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-14.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+How Sold
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+How Sold
+CONV          4025
+CASH          2291
+FHA            785
+VA             400
+Other          108
+Own Fin         91
+Utah Hsng       41
+C for Deed      13
+Owner 1st       10
+Assumption       4
+Farm Home        3
+Lease Pur        1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-16.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+MLS Area
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+count    7772.000000
+mean        5.669840
+std         4.541985
+min         1.000000
+25%         1.000000
+50%         5.000000
+75%        11.000000
+max        12.000000
+Name: MLS Area, dtype: float64
+Correlation with Sold Price: 0.225</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-18.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-19.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+St. Dir.
+----------------------------------------------------------------------
+Missing: 6.2% | Unique values: 4
+St. Dir.
+W    2215
+N    2068
+S    1723
+E    1282
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-21.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+City
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 104
+High cardinality — showing top 15 only
+City
+Cedar City            3286
+St George             1192
+Washington             546
+Enoch                  527
+Hurricane              380
+Brian Head             332
+Duck Creek Village     202
+Parowan                180
+Beaver                 163
+Ivins                  120
+Santa Clara             73
+New Harmony             68
+Milford                 58
+Panguitch               57
+La Verkin               53
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-23.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+State/Province
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1
+State/Province
+UT    7772
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-25.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+County
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 19
+High cardinality — showing top 15 only
+County
+Iron          4408
+Washington    2642
+Beaver         251
+Kane           234
+Garfield       112
+Utah            30
+Salt Lake       23
+Piute           17
+Sevier          17
+Millard         13
+Weber            6
+Wayne            5
+Davis            4
+Sanpete          4
+Carbon           2
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-27.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2650
+count     7772.000000
+mean      2083.458698
+std       1028.441542
+min          0.000000
+25%       1420.000000
+50%       1810.000000
+75%       2536.000000
+max      15686.000000
+Name: Total SqFt, dtype: float64
+Correlation with Sold Price: 0.684</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-29.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-30.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Basement SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1014
+count     7772.000000
+mean       338.369391
+std        651.894567
+min          0.000000
+25%          0.000000
+50%          0.000000
+75%        408.000000
+max      10367.000000
+Name: Basement SqFt, dtype: float64
+Correlation with Sold Price: 0.276</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-32.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-33.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Main SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2160
+count    7772.000000
+mean     1445.468830
+std       671.047471
+min         0.000000
+25%       922.750000
+50%      1427.000000
+75%      1821.250000
+max      8860.000000
+Name: Main SqFt, dtype: float64
+Correlation with Sold Price: 0.661</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-35.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-36.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Upstairs SqFt
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 885
+count    7771.000000
+mean      300.725663
+std       477.386935
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%       667.000000
+max      4546.000000
+Name: Upstairs SqFt, dtype: float64
+Correlation with Sold Price: 0.172</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-38.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-39.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Year Built
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 145
+count    7772.000000
+mean     2001.721436
+std        58.688489
+min         0.000000
+25%      1994.000000
+50%      2007.000000
+75%      2022.000000
+max      2026.000000
+Name: Year Built, dtype: float64
+Correlation with Sold Price: 0.079</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-41.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-42.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Lot Acres
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 392
+count    7772.000000
+mean        0.737477
+std         4.890375
+min         0.000000
+25%         0.070000
+50%         0.220000
+75%         0.400000
+max       301.380000
+Name: Lot Acres, dtype: float64
+Correlation with Sold Price: 0.179</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-44.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-45.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Bedrooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+count    7772.000000
+mean        3.400283
+std         1.169890
+min         0.000000
+25%         3.000000
+50%         3.000000
+75%         4.000000
+max        11.000000
+Name: Total Bedrooms, dtype: float64
+Correlation with Sold Price: 0.457</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-47.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-48.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Full Baths
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 12
+count    7772.000000
+mean        2.240221
+std         0.842393
+min         0.000000
+25%         2.000000
+50%         2.000000
+75%         3.000000
+max        31.000000
+Name: Full Baths, dtype: float64
+Correlation with Sold Price: 0.569</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-50.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-51.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Half Baths
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 6
+count    7772.000000
+mean        0.344570
+std         0.510757
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         1.000000
+max         9.000000
+Name: Half Baths, dtype: float64
+Correlation with Sold Price: 0.191</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-53.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-54.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Garage Type
+----------------------------------------------------------------------
+Missing: 13.1% | Unique values: 4
+Garage Type
+Attach    5741
+Carpor     452
+Detach     451
+Bsmt       113
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-56.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Zoned
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 322
+High cardinality — showing top 15 only
+Zoned
+Residential    2834
+R-1             643
+R               566
+R1              385
+Res             346
+R3              340
+RES             294
+residential     166
+R-3             158
+R-3-M           117
+res             116
+R-2             110
+R-1-11          108
+R-2-1           100
+R-2-2            95
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-58.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Taxes
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 5600
+count      7772.000000
+mean       1819.830989
+std       11912.258999
+min           0.000000
+25%         706.912500
+50%        1358.555000
+75%        2125.000000
+max      784828.000000
+Name: Total Taxes, dtype: float64
+Correlation with Sold Price: 0.108</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-60.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-61.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Subdivision
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 717
+High cardinality — showing top 15 only
+Subdivision
+Not Applicable        1683
+Old Sorrel Ranch       259
+Iron West              119
+Settlers Square        116
+Cedar Bend             115
+Crescent Hills          88
+Shadow Cove             75
+Sun River               69
+Trailside               63
+Gemini Meadows          56
+Saddleback Ridge        55
+Sycamore Trail          54
+Mid Valley Estates      51
+Iron Mountain           50
+Hurricane Townsite      50
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-63.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+For Sale or Rent
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+For Sale or Rent
+For Sale    7759
+For Rent      13
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-65.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+HOA
+No     4059
+Yes    3713
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-67.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Basement
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+Basement
+No     5712
+Yes    2060
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-69.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Fireplaces
+----------------------------------------------------------------------
+Missing: 50.5% | Unique values: 4
+Fireplaces
+One             3099
+Two              418
+Woodstove        242
+Three or Mor      90
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-71.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Square Foot Source
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+Square Foot Source
+County Records    4854
+Builder           2080
+Owner              607
+Appraiser          231
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-73.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+PUD
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 2
+PUD
+No     6175
+Yes    1597
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-75.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Elementary
+----------------------------------------------------------------------
+Missing: 34.3% | Unique values: 59
+High cardinality — showing top 15 only
+Elementary
+Three Peaks        463
+Cedar North        427
+Iron Springs       405
+Cedar South        344
+Fiddlers Canyon    313
+Enoch              309
+Parowan            298
+Coral Canyon       199
+Cedar East         167
+Sandstone          145
+Red Mountain       137
+Hurricane          136
+Bloomington        135
+Three Falls        125
+Belknap            117
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-77.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Senior Community
+----------------------------------------------------------------------
+Missing: 56.5% | Unique values: 2
+Senior Community
+No     3137
+Yes     247
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-79.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Jr. High
+----------------------------------------------------------------------
+Missing: 34.5% | Unique values: 26
+High cardinality — showing top 15 only
+Jr. High
+Cedar             1330
+Canyon View       1201
+Hurricane          406
+Dixie              384
+Pine View          355
+Snow Canyon        288
+Parowan            260
+Desert Hills       203
+Crimson Cliffs     134
+Beaver             125
+Tonaquint           62
+Fossil Ridge        61
+Enterprise          60
+Lava Ridge          49
+Valley              44
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-81.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Sr. High
+----------------------------------------------------------------------
+Missing: 32.6% | Unique values: 25
+High cardinality — showing top 15 only
+Sr. High
+Cedar             1359
+Canyon View       1209
+Dixie              443
+Pine View          417
+Hurricane          405
+Snow Canyon        337
+Parowan            292
+Desert Hills       205
+Beaver             140
+Crimson Cliffs     134
+Enterprise          85
+Valley              72
+Milford             47
+Panguitch           41
+Piute               21
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-83.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Listing Type
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+Listing Type
+ER    7556
+EA     213
+SP       3
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-85.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA Dues $
+----------------------------------------------------------------------
+Missing: 52.2% | Unique values: 483
+count    3713.000000
+mean      181.474142
+std       343.075057
+min         0.000000
+25%        73.000000
+50%       120.000000
+75%       195.000000
+max      5000.000000
+Name: HOA Dues $, dtype: float64
+Correlation with Sold Price: 0.030</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-87.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-88.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Garage Capacity
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 30
+count    7772.000000
+mean        2.453592
+std        26.347190
+min         0.000000
+25%         2.000000
+50%         2.000000
+75%         3.000000
+max      2005.000000
+Name: Garage Capacity, dtype: float64
+Correlation with Sold Price: 0.041</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-90.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-91.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Special Taxes (SID)$
+----------------------------------------------------------------------
+Missing: 94.6% | Unique values: 15
+count       419.000000
+mean       1262.723508
+std       23977.331286
+min           0.000000
+25%           0.000000
+50%           0.000000
+75%           0.000000
+max      490000.000000
+Name: Special Taxes (SID)$, dtype: float64
+Correlation with Sold Price: 0.003</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-93.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-94.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Lofts
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 6
+count    7772.000000
+mean        0.454066
+std        19.459300
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         0.000000
+max      1267.000000
+Name: Lofts, dtype: float64
+Correlation with Sold Price: 0.027</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-96.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-97.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Concessions
+----------------------------------------------------------------------
+Missing: 14.6% | Unique values: 1163
+High cardinality — showing top 15 only
+Concessions
+0        2706
+no        508
+none      431
+No        241
+10000     207
+5000      188
+15000      71
+4000       57
+7000       51
+2000       43
+3000       42
+6000       41
+1000       39
+8000       39
+NONE       32
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-99.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+HOA Dues Frequency
+----------------------------------------------------------------------
+Missing: 52.2% | Unique values: 3
+HOA Dues Frequency
+Monthly      3143
+Annually      492
+Quarterly      78
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-101.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Owner/Agent
+----------------------------------------------------------------------
+Missing: 38.6% | Unique values: 2
+Owner/Agent
+N    4296
+Y     478
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-103.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Concessions Available
+----------------------------------------------------------------------
+Missing: 100.0% | Unique values: 2
+Concessions Available
+Y    1
+N    1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-105.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Days on Market
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 388
+count    7772.000000
+mean       57.510679
+std        75.222308
+min       -54.000000
+25%         8.000000
+50%        30.000000
+75%        78.000000
+max       969.000000
+Name: Days on Market, dtype: float64
+Correlation with Sold Price: 0.050</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-107.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-108.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Bsmt % Finish
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 36
+High cardinality — showing top 15 only
+Bsmt % Finish
+0      5681
+100    1440
+80       98
+15       83
+90       80
+50       71
+95       55
+10       47
+5        39
+75       29
+25       25
+20       21
+30       17
+85       16
+40       14
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-110.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Fireplaces2
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+count    7772.000000
+mean        0.572182
+std         0.649530
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         1.000000
+max         3.000000
+Name: Fireplaces2, dtype: float64
+Correlation with Sold Price: 0.360</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-112.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-113.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Kitchens
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+count    7772.000000
+mean        1.027406
+std         0.167936
+min         1.000000
+25%         1.000000
+50%         1.000000
+75%         1.000000
+max         3.000000
+Name: Kitchens, dtype: float64
+Correlation with Sold Price: 0.114</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-115.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-116.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Laundry
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+count    7772.000000
+mean        1.020072
+std         0.144771
+min         1.000000
+25%         1.000000
+50%         1.000000
+75%         1.000000
+max         4.000000
+Name: Laundry, dtype: float64
+Correlation with Sold Price: 0.179</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-118.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-119.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+3/4 Baths
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 5
+count    7772.000000
+mean        0.064462
+std         0.301565
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         0.000000
+max         4.000000
+Name: 3/4 Baths, dtype: float64
+Correlation with Sold Price: 0.079</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-121.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-122.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Full Baths3
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 13
+count    7772.000000
+mean        2.175759
+std         0.867633
+min        -1.000000
+25%         2.000000
+50%         2.000000
+75%         2.000000
+max        31.000000
+Name: Full Baths3, dtype: float64
+Correlation with Sold Price: 0.525</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-124.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-125.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Parcel ID Check
+----------------------------------------------------------------------
+Missing: 45.8% | Unique values: 3798
+High cardinality — showing top 15 only
+Parcel ID Check
+B-1740-000A-0010       4
+B-1378-0010-0000       3
+D-0535-0004-0000       3
+B-2001-0034-0000       3
+B-1520-0002-0000       3
+B-1157-0001-0003       3
+E-0258-0015-0000       3
+D-0518-0043-0001-02    3
+B-0065-0077-0000       3
+B-2021-0058-0000       3
+B-2020-0106-0000       3
+B-2020-0084-0000       3
+A-1035-0004-0000       3
+B-0065-0062-0000       3
+A-1184-0012-0000       3
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-127.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Road Condition
+----------------------------------------------------------------------
+Missing: 10.4% | Unique values: 2
+Road Condition
+Paved         6819
+Unimproved     144
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-129.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Accessability
+----------------------------------------------------------------------
+Missing: 43.6% | Unique values: 2
+Accessability
+Year Round    4296
+Seasonal        90
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-131.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Address
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 7332
+High cardinality — showing top 15 only
+Address
+2988 W 2025 S Circle      3
+437 Bristlecone Drive     3
+150 W Ridge View #103     3
+396 W 1500 N              3
+470 E Parkway Drive       3
+3081 W 1725 #20 N         3
+4731 Quickdraw Lane       3
+2072 W 30 S               3
+164 W 700 N               3
+285 N Bulloch Place       3
+427 W Bluebell Court      3
+208 N Guidelight Drive    2
+2103 N Hawthorne Lane     2
+51 S 4375 #12 W           2
+51 S 4375 #14 W           2
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-15-output-133.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="heatmap-1" class="level3">
+<h3 class="anchored" data-anchor-id="heatmap-1">Heatmap</h3>
+<div id="03103574" class="cell" data-execution_count="15">
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-16-output-1.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="prepared-sales" class="level2">
+<h2 class="anchored" data-anchor-id="prepared-sales">Prepared Sales</h2>
+<section id="preclean-1" class="level3">
+<h3 class="anchored" data-anchor-id="preclean-1">Preclean</h3>
+<div id="e229aea0" class="cell" data-execution_count="16">
+<div class="cell-output cell-output-stdout">
+<pre><code>['MLS #', 'Acres', 'Basement Finished', 'Under Contract Date', 'Effective Date Of The Listing Agreement', 'List Price', 'Basement Square Feet', 'Sold Concessions', 'Sold Date', 'Sold Price', 'Sold Terms', 'Tax ID', 'Total Bedrooms', 'Total Full Bathrooms', 'Total Half Bathrooms', 'Total Three-quarter Bathrooms', 'Total Fireplaces', 'Total Kitchens', 'Total Laundry Rooms', 'Total Square Feet', 'Year Built', 'Road Condition', 'Accessability', 'Address']</code></pre>
+</div>
+</div>
+</section>
+<section id="post-clean" class="level3">
+<h3 class="anchored" data-anchor-id="post-clean">Post Clean</h3>
+<div id="84d3b384" class="cell" data-execution_count="17">
+<div class="cell-output cell-output-stdout">
+<pre><code>['Acres', 'Basement Finished', 'Under Contract Date', 'Effective Date Of The Listing Agreement', 'List Price', 'Basement Square Feet', 'Sold Price', 'Sold Terms', 'Total Bedrooms', 'Total Full Bathrooms', 'Total Half Bathrooms', 'Total Three-quarter Bathrooms', 'Total Fireplaces', 'Total Kitchens', 'Total Laundry Rooms', 'Total Square Feet', 'Year Built', 'Road Condition', 'Accessability']</code></pre>
+</div>
+</div>
+</section>
+<section id="univariate-eda-1" class="level3">
+<h3 class="anchored" data-anchor-id="univariate-eda-1">Univariate EDA</h3>
+<div id="50d7df6b" class="cell" data-execution_count="18">
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Dataset shape: (4408, 19)
+
+======================================================================
+Acres
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 285
+count    4408.000000
+mean        0.750758
+std         5.732638
+min         0.000000
+25%         0.030000
+50%         0.230000
+75%         0.410000
+max       301.380000
+Name: Acres, dtype: float64
+Correlation with Sold Price: 0.255</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-2.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-3.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Basement Finished
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 28
+count    4408.000000
+mean       26.797870
+std        83.340766
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%        50.000000
+max      4421.000000
+Name: Basement Finished, dtype: float64
+Correlation with Sold Price: 0.210</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-5.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-6.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Under Contract Date
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1321
+High cardinality — showing top 15 only
+Under Contract Date
+2025-09-12    20
+2025-10-06    17
+2025-09-09    17
+2025-10-07    16
+2022-01-19    15
+2025-10-16    15
+2025-09-16    14
+2024-04-16    13
+2025-08-26    13
+2025-09-26    12
+2022-02-16    11
+2025-08-06    11
+2025-09-22    11
+2025-09-30    11
+2025-10-15    10
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-8.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Effective Date Of The Listing Agreement
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1223
+High cardinality — showing top 15 only
+Effective Date Of The Listing Agreement
+2022-02-14    18
+2024-04-05    15
+2022-01-19    15
+2024-04-24    14
+2022-03-22    14
+2022-02-16    14
+2025-06-17    13
+2024-09-27    13
+2025-07-29    12
+2025-09-16    11
+2024-08-01    11
+2024-04-10    11
+2024-01-05    11
+2024-05-01    11
+2025-03-10    11
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-10.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+List Price
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1055
+count    4.408000e+03
+mean     4.322836e+05
+std      2.006778e+05
+min      1.650000e+03
+25%      3.150000e+05
+50%      3.970000e+05
+75%      4.990000e+05
+max      2.800000e+06
+Name: List Price, dtype: float64
+Correlation with Sold Price: 0.964</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-12.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-13.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Basement Square Feet
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 735
+count    4408.000000
+mean      426.335073
+std       686.579699
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%       840.000000
+max      4421.000000
+Name: Basement Square Feet, dtype: float64
+Correlation with Sold Price: 0.433</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-15.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-16.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Sold Terms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 11
+Sold Terms
+CONV          2320
+CASH          1137
+FHA            527
+VA             288
+Other           48
+Own Fin         37
+Utah Hsng       32
+C for Deed       9
+Owner 1st        7
+Farm Home        2
+Assumption       1
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-18.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Bedrooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 10
+count    4408.000000
+mean        3.424002
+std         1.139523
+min         0.000000
+25%         3.000000
+50%         3.000000
+75%         4.000000
+max         9.000000
+Name: Total Bedrooms, dtype: float64
+Correlation with Sold Price: 0.498</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-20.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-21.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Full Bathrooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 9
+count    4408.000000
+mean        2.150635
+std         0.669606
+min        -1.000000
+25%         2.000000
+50%         2.000000
+75%         2.000000
+max         7.000000
+Name: Total Full Bathrooms, dtype: float64
+Correlation with Sold Price: 0.531</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-23.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-24.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Half Bathrooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 5
+count    4408.000000
+mean        0.375454
+std         0.501784
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         1.000000
+max         5.000000
+Name: Total Half Bathrooms, dtype: float64
+Correlation with Sold Price: 0.060</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-26.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-27.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Three-quarter Bathrooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 5
+count    4408.000000
+mean        0.036978
+std         0.239588
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         0.000000
+max         4.000000
+Name: Total Three-quarter Bathrooms, dtype: float64
+Correlation with Sold Price: 0.123</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-29.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-30.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Fireplaces
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 4
+count    4408.000000
+mean        0.566016
+std         0.651191
+min         0.000000
+25%         0.000000
+50%         0.000000
+75%         1.000000
+max         3.000000
+Name: Total Fireplaces, dtype: float64
+Correlation with Sold Price: 0.398</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-32.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-33.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Kitchens
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+count    4408.000000
+mean        1.023593
+std         0.154757
+min         1.000000
+25%         1.000000
+50%         1.000000
+75%         1.000000
+max         3.000000
+Name: Total Kitchens, dtype: float64
+Correlation with Sold Price: 0.121</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-35.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-36.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Laundry Rooms
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 3
+count    4408.000000
+mean        1.015880
+std         0.128605
+min         1.000000
+25%         1.000000
+50%         1.000000
+75%         1.000000
+max         3.000000
+Name: Total Laundry Rooms, dtype: float64
+Correlation with Sold Price: 0.168</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-38.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-39.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Total Square Feet
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 1657
+count    4408.000000
+mean     2066.221869
+std       967.510111
+min       150.000000
+25%      1420.000000
+50%      1776.000000
+75%      2504.500000
+max      9155.000000
+Name: Total Square Feet, dtype: float64
+Correlation with Sold Price: 0.721</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-41.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-42.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Year Built
+----------------------------------------------------------------------
+Missing: 0.0% | Unique values: 123
+count    4408.000000
+mean     2005.211434
+std        55.596269
+min         0.000000
+25%      1997.000000
+50%      2016.000000
+75%      2023.000000
+max      2026.000000
+Name: Year Built, dtype: float64
+Correlation with Sold Price: 0.074</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-44.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-45.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Road Condition
+----------------------------------------------------------------------
+Missing: 7.8% | Unique values: 2
+Road Condition
+Paved         3972
+Unimproved      91
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-47.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>======================================================================
+Accessability
+----------------------------------------------------------------------
+Missing: 41.2% | Unique values: 2
+Accessability
+Year Round    2565
+Seasonal        26
+Name: count, dtype: int64</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-19-output-49.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="heatmap-2" class="level3">
+<h3 class="anchored" data-anchor-id="heatmap-2">Heatmap</h3>
+<div id="27061b77" class="cell" data-execution_count="19">
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="EDA_files/figure-html/cell-20-output-1.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+        const codeEl = trigger.previousElementSibling.cloneNode(true);
+        for (const childEl of codeEl.children) {
+          if (isCodeAnnotation(childEl)) {
+            childEl.remove();
+          }
+        }
+        return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -1,0 +1,342 @@
+---
+title: "PCA and UMAP"
+author: "Ryan McMurray"
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    theme: cosmo
+    embed-resources: true
+execute:
+  echo: false
+  warning: true
+  message: true
+jupyter: python3
+---
+
+## File Prep
+```{python}
+#| label: setup
+#| cache: true
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+import umap
+from joblib import Parallel, delayed
+import os
+import hdbscan
+
+# Load datasets
+residential = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/MLS_Land_Sales.csv")
+puma = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/PUMA2.csv")
+```
+
+### Residential
+```{python}
+#| cache: true
+DROP_COLS = [
+    # IDs / PII / Agents / Metadata
+    "List Number","Agency Name","Agency Phone","Agency Email",
+    "Listing Agent","Listing Agent Phone","Listing Agent Email","Co-Listing Agent",
+    "Selling Agency","Selling Agency Phone","Selling Agency Email","Selling Agent",
+    "Selling Agent Phone","Selling Agent Email","Co-Selling Agent","St. #",
+    "Street Name","Street Direction Sfx","Street Suffix","Address 2","Parcel Number",
+    "Owner","Tax Serial #","Photo URL","mod_timestamp","Card Format","Book Section",
+    "Directions","Private Remarks", "Postal Code",
+
+    # Post Sell
+    "Sold Date","Status Change Date","Withdrawal Date","Cancel Date",
+    "Fallthrough Date","Sold Price Per/SqFt","Concessions Amount",
+
+    # Noisy Could Use with work
+    "Contingent Remarks","Public Remarks","Financing Remarks","Utilities","Features", "Rooms",
+
+    # Don't want to fix yet
+    "End Date", "Lot Dimensions", "Marketing Begin Date",
+    "Concessions4",
+
+    # Uniform
+    'Property Type', # Residential Only
+    'Status', # C only
+    'State', # Utah Only
+    "Delayed Marketing Exempt Listing", # N Only 1 missing
+
+    'Listing Date', 'Under Contract Date', 'PUD', 'Parcel ID Check', 'Address', 
+    'St. Dir.'
+]
+
+# Drop columns safely
+residential = residential.drop(
+    columns=[c for c in DROP_COLS if c in residential.columns]
+    )
+```
+
+### PUMA
+```{python}
+#| cache: true
+DROP_COLS = [
+    'MLS #', 'Sold Date', 'Sold Concessions', 'Tax ID', 'Address', 'List Number', 'Photo URL', 'Accessability', 'GLA', 'Adjusted SP'
+    ]
+
+puma = puma.drop(columns=[c for c in DROP_COLS if c in puma.columns])
+```
+
+```{python}
+#| label: Column Check
+datasets = {
+    "puma": puma,
+    "residential": residential
+}
+
+for name, df in datasets.items():
+    print(f"\n{name} columns:")
+    print(df.columns.tolist())
+```
+
+## PCA
+```{python}
+#| label: prepare_numeric_matrix
+def prepare_numeric_matrix(df, var_thresh=1e-4):
+    """
+    Converts a dataframe into a numeric matrix for PCA/UMAP:
+    - Fills missing values (median for numeric, 'Missing' for categorical)
+    - One-hot encodes categorical variables
+    - Drops near-zero variance features
+    - Standardizes features
+    """
+    df = df.copy()
+    
+    # Numeric / categorical FIX THIS
+    num = df.select_dtypes(include=np.number).fillna(df.select_dtypes(include=np.number).median())
+    cat = df.select_dtypes(exclude=np.number).fillna("Missing")
+    
+    # One-hot encode categoricals
+    X = pd.get_dummies(pd.concat([num, cat], axis=1), drop_first=True)
+    
+    # Drop near-zero variance
+    variances = X.var()
+    keep_cols = variances[variances > var_thresh].index
+    X = X[keep_cols]
+    
+    # Standardize
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    return X_scaled, X.columns.tolist()
+```
+
+```{python}
+#| label: reduce_with_pca_scree
+def reduce_with_pca(X, n_components=None, variance_threshold=0.9, show_scree=True, title="PCA Scree Plot"):
+    """
+    Reduces dimensionality using PCA and optionally shows scree plots.
+    
+    Parameters:
+    -----------
+    X : array-like
+        Numeric matrix (scaled)
+    n_components : int or None
+        Number of PCA components to keep. If None, use variance_threshold
+    variance_threshold : float
+        Cumulative explained variance ratio threshold if n_components is None
+    show_scree : bool
+        If True, plots scree and cumulative variance plots
+    title : str
+        Title prefix for plots
+    
+    Returns:
+    --------
+    X_pca : ndarray
+        PCA-transformed matrix
+    pca : PCA object
+        Fitted PCA model
+    """
+    
+    # Fit PCA to all components first
+    pca_full = PCA(n_components=None)
+    pca_full.fit(X)
+    
+    evr = pca_full.explained_variance_ratio_
+    cumvar = np.cumsum(evr)
+    
+    # Decide how many components
+    if n_components is None:
+        n_components = np.searchsorted(cumvar, variance_threshold) + 1
+    
+    # Fit PCA with selected components
+    pca = PCA(n_components=n_components)
+    X_pca = pca.fit_transform(X)
+    
+    # Scree plots
+    if show_scree:
+        plt.figure(figsize=(8,4))
+        plt.plot(range(1, len(evr)+1), evr, marker='o')
+        plt.axvline(n_components, linestyle='--', color='red', label=f"{n_components} PCs")
+        plt.xlabel("Principal Component")
+        plt.ylabel("Explained Variance Ratio")
+        plt.title(f"{title} - Scree Plot")
+        plt.legend()
+        plt.show()
+        
+        plt.figure(figsize=(8,4))
+        plt.plot(range(1, len(cumvar)+1), cumvar, marker='o')
+        plt.axhline(variance_threshold, linestyle='--', color='green', label=f"{variance_threshold*100:.0f}% Variance")
+        plt.axvline(n_components, linestyle='--', color='red', label=f"{n_components} PCs")
+        plt.xlabel("Principal Component")
+        plt.ylabel("Cumulative Explained Variance")
+        plt.title(f"{title} - Cumulative Variance")
+        plt.legend()
+        plt.show()
+    
+    return X_pca, pca
+```
+
+## UMAP
+```{python}
+#| label: umap_with_clustering
+def run_umap_cluster(X, n_neighbors=15, min_dist=0.1, n_components=2, metric='euclidean', plot=True, title="UMAP"):
+    """
+    Runs UMAP and HDBSCAN clustering:
+    - Returns embedding coordinates and cluster labels
+    - Plots 2D embedding colored by clusters
+    """
+    # UMAP
+    reducer = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        n_components=n_components,
+        metric=metric,
+        random_state=42
+    )
+    embedding = reducer.fit_transform(X)
+    
+    # HDBSCAN clustering
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=10)
+    labels = clusterer.fit_predict(embedding)
+    
+    # Plot if 2D
+    if plot and n_components == 2:
+        plt.figure(figsize=(8,6))
+        plt.scatter(
+            embedding[:,0],
+            embedding[:,1],
+            c=labels,
+            cmap='Spectral',
+            s=10,
+            alpha=0.7
+        )
+        plt.title(f"{title} (HDBSCAN clusters)")
+        plt.xlabel("UMAP 1")
+        plt.ylabel("UMAP 2")
+        plt.colorbar(label="Cluster")
+        plt.show()
+    
+    return embedding, labels
+```
+
+## Processing
+```{python}
+#| label: batch_umap_cluster
+#| cache: true
+results_dict = {}
+
+# Optional: define PCA components per dataset (None = auto based on variance)
+pca_components = {
+    "family": None,
+    "land": None,
+    "puma": None,
+    "residential": None
+}
+
+for name, df in datasets.items():
+    print(f"\nProcessing dataset: {name}")
+
+    # Prepare numeric matrix
+    X_scaled, features = prepare_numeric_matrix(df)
+
+    # PCA pre-reduction + scree plots
+    X_pca, pca_model = reduce_with_pca(
+        X_scaled,
+        n_components=pca_components.get(name),
+        variance_threshold=0.9,
+        show_scree=True,
+        title=f"PCA: {name}"
+    )
+
+    # UMAP + clustering
+    embedding, labels = run_umap_cluster(
+        X_pca,
+        n_neighbors=20,
+        min_dist=0.1,
+        n_components=2,
+        title=f"UMAP: {name}"
+    )
+
+    results_dict[name] = {
+        "X_scaled": X_scaled,
+        "X_pca": X_pca,
+        "embedding": embedding,
+        "cluster_labels": labels,
+        "features": features,
+        "pca_model": pca_model
+    }
+```
+
+## Feature Summary
+
+```{python}
+#| label: top_features_summary
+#| cache: true
+def compute_top_features(results_dict, df_dict, top_n_pca=10, top_n_cluster=10):
+    """
+    Computes top features per dataset based on PCA loadings and UMAP cluster correlation.
+    
+    Adds two keys to each dataset in results_dict:
+        - 'top_features_pca': top variables by PCA loadings
+        - 'top_features_cluster': top variables by cluster correlation
+    """
+    
+    for name, result in results_dict.items():
+        print(f"\nDataset: {name}")
+        df = df_dict[name]
+        features = result["features"]
+        pca_model = result["pca_model"]
+        cluster_labels = result["cluster_labels"]
+        
+        # ---- PCA loadings ----
+        loadings = np.abs(pca_model.components_)
+        pca_importance = pd.Series(loadings.sum(axis=0), index=features)
+        pca_importance = pca_importance.sort_values(ascending=False)
+        top_features_pca = pca_importance.head(top_n_pca)
+        
+        # ---- Cluster correlations ----
+        df_num = df.select_dtypes(include=np.number).fillna(df.select_dtypes(include=np.number).median())
+        df_num["cluster"] = cluster_labels
+        
+        cluster_means = df_num.groupby("cluster").mean()
+        overall_mean = df_num.mean()
+        cluster_diff = (cluster_means - overall_mean).abs().sum().sort_values(ascending=False)
+        top_features_cluster = cluster_diff.head(top_n_cluster)
+        
+        # ---- Save to results_dict ----
+        results_dict[name]["top_features_pca"] = top_features_pca
+        results_dict[name]["top_features_cluster"] = top_features_cluster
+        
+        # ---- Optional plots ----
+        fig, axes = plt.subplots(1, 2, figsize=(12,5))
+        top_features_pca.plot.bar(ax=axes[0], color='skyblue')
+        axes[0].set_title(f"{name} - Top PCA Features")
+        axes[0].set_ylabel("Sum of absolute loadings")
+        
+        top_features_cluster.plot.bar(ax=axes[1], color='salmon')
+        axes[1].set_title(f"{name} - Top Cluster Features")
+        axes[1].set_ylabel("Cluster vs overall difference")
+        
+        plt.tight_layout()
+        plt.show()
+
+# ---- Run for all datasets ----
+compute_top_features(results_dict, datasets, top_n_pca=10, top_n_cluster=10)
+```
