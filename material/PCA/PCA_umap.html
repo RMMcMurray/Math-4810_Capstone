@@ -133,7 +133,7 @@ window.Quarto = {
 
 <section id="import-libraries" class="level2">
 <h2 class="anchored" data-anchor-id="import-libraries">Import Libraries</h2>
-<div id="initial-imports" class="cell" data-cache="true" data-execution_count="1">
+<div id="initial-imports" class="cell" data-cache="true" data-execution_count="2">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pandas <span class="im">import</span> read_csv</span>
@@ -162,7 +162,7 @@ window.Quarto = {
 <span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> statsmodels.stats.outliers_influence <span class="im">import</span> variance_inflation_factor</span>
 <span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> statsmodels.tools.tools <span class="im">import</span> add_constant</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="function-creation" class="cell" data-execution_count="2">
+<div id="function-creation" class="cell" data-execution_count="3">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> normalize(df):</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns two dataframes:</span></span>
@@ -207,7 +207,7 @@ window.Quarto = {
 <h1>Unsupervised Learning</h1>
 <section id="read-in-parcel-data" class="level2">
 <h2 class="anchored" data-anchor-id="read-in-parcel-data">Read in Parcel Data</h2>
-<div id="read-in-parcel-export-sheet-2" class="cell" data-cache="true" data-execution_count="3">
+<div id="read-in-parcel-export-sheet-2" class="cell" data-cache="true" data-execution_count="4">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>parcel_export <span class="op">=</span> pd.read_excel(<span class="st">"/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx"</span>, sheet_name<span class="op">=</span><span class="st">"Full Parcel Summary"</span>)</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>parcel_export.head()</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>parcel_export.shape <span class="co"># (53277, 53)</span></span>
@@ -278,7 +278,7 @@ memory usage: 21.2+ MB</code></pre>
 </section>
 <section id="view-the-non-numeric-variables" class="level2">
 <h2 class="anchored" data-anchor-id="view-the-non-numeric-variables">View the Non-Numeric Variables</h2>
-<p>::: {#cell-Non-numeric columns .cell cache=‘true’ execution_count=4}</p>
+<p>::: {#cell-Non-numeric columns .cell cache=‘true’ execution_count=5}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>non_numeric_cols <span class="op">=</span> parcel_export.select_dtypes(exclude<span class="op">=</span>[np.number]).columns.tolist()</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>parcel_export[non_numeric_cols].shape <span class="co"># (53277, 12)</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>parcel_export[non_numeric_cols].info()</span>
@@ -315,7 +315,7 @@ memory usage: 4.5+ MB</code></pre>
 </section>
 <section id="view-the-numeric-variables" class="level2">
 <h2 class="anchored" data-anchor-id="view-the-numeric-variables">View the Numeric Variables</h2>
-<p>::: {#cell-Numeric columns .cell cache=‘true’ execution_count=5}</p>
+<p>::: {#cell-Numeric columns .cell cache=‘true’ execution_count=6}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>numeric_cols <span class="op">=</span> parcel_export.select_dtypes(include<span class="op">=</span>[np.number]).columns.tolist() </span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>parcel_export[numeric_cols].shape <span class="co"># (53277, 41)</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>parcel_export[numeric_cols].info() </span>
@@ -388,7 +388,7 @@ memory usage: 16.7 MB</code></pre>
 </section>
 <section id="move-the-categorical-numeric-variables-out" class="level2">
 <h2 class="anchored" data-anchor-id="move-the-categorical-numeric-variables-out">Move the Categorical Numeric Variables Out</h2>
-<p>::: {#cell-Numeric Column Adjustment .cell execution_count=6}</p>
+<p>::: {#cell-Numeric Column Adjustment .cell execution_count=7}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>cols_to_move <span class="op">=</span> [<span class="st">'TaxYear'</span>, <span class="st">'ImpOnly'</span>, <span class="st">'PropType '</span>, <span class="st">'Jurisdiction'</span>, <span class="st">'SpecificPropType'</span>, <span class="st">'Lat'</span>, <span class="st">'Lng'</span>, <span class="st">'ReviewedDate'</span>, <span class="st">'ImpCode'</span>, <span class="st">'Res Imp Count'</span>]</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>non_numeric_cols <span class="op">=</span> <span class="bu">list</span>(<span class="bu">set</span>(non_numeric_cols) <span class="op">|</span> <span class="bu">set</span>(cols_to_move))</span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>numeric_cols <span class="op">=</span> [c <span class="cf">for</span> c <span class="kw">in</span> parcel_export.columns <span class="cf">if</span> c <span class="kw">not</span> <span class="kw">in</span> non_numeric_cols]</span>
@@ -401,10 +401,10 @@ memory usage: 16.7 MB</code></pre>
 </section>
 <section id="fill-in-nas-with-0" class="level2">
 <h2 class="anchored" data-anchor-id="fill-in-nas-with-0">Fill in NA’s with 0</h2>
-<div id="fill-in-nas-for-numeric-columns-with-0" class="cell" data-execution_count="7">
+<div id="fill-in-nas-for-numeric-columns-with-0" class="cell" data-execution_count="8">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>parcel_export[numeric_cols] <span class="op">=</span> parcel_export[numeric_cols].fillna(<span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p>::: {#filter-parcel-export-for-pca-(only-numeric-columns .cell cache=‘true’ execution_count=8}</p>
+<p>::: {#filter-parcel-export-for-pca-(only-numeric-columns .cell cache=‘true’ execution_count=9}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>numeric_parcel_data <span class="op">=</span> parcel_export[numeric_cols]</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>numeric_parcel_data.shape <span class="co"># (53277, 24)</span></span>
@@ -450,7 +450,7 @@ dtypes: float64(31)
 memory usage: 12.6 MB</code></pre>
 </div>
 <p>:::</p>
-<p>::: {#cell-Perform Transformations .cell execution_count=9}</p>
+<p>::: {#cell-Perform Transformations .cell execution_count=10}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>df_competition <span class="op">=</span> normalize(numeric_parcel_data)</span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>df_competition.columns</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
@@ -475,11 +475,11 @@ memory usage: 12.6 MB</code></pre>
 </section>
 <section id="scale-and-conduct-pca" class="level2">
 <h2 class="anchored" data-anchor-id="scale-and-conduct-pca">Scale and Conduct PCA</h2>
-<div id="scaling-the-data-for-pca" class="cell" data-cache="true" data-execution_count="10">
+<div id="scaling-the-data-for-pca" class="cell" data-cache="true" data-execution_count="11">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>scaler <span class="op">=</span> StandardScaler()</span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>X_scaled <span class="op">=</span> scaler.fit_transform(df_competition)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p>::: {#cell-PCA and Scree Plot .cell cache=‘true’ execution_count=11}</p>
+<p>::: {#cell-PCA and Scree Plot .cell cache=‘true’ execution_count=12}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>pca_full <span class="op">=</span> PCA(n_components<span class="op">=</span><span class="va">None</span>)</span>
 <span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>pca_full.fit(X_scaled)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div id="pca-and-scree-plot" class="cell-output cell-output-display" data-execution_count="11">
@@ -1314,7 +1314,7 @@ forceTheme('sk-container-id-1');</script>
 </section>
 <section id="pca-scree-plot" class="level2">
 <h2 class="anchored" data-anchor-id="pca-scree-plot">PCA Scree Plot</h2>
-<p>::: {#cell-Scree Plot to optimize number of components .cell cache=‘true’ execution_count=12}</p>
+<p>::: {#cell-Scree Plot to optimize number of components .cell cache=‘true’ execution_count=13}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>plt.figure(figsize<span class="op">=</span>(<span class="dv">8</span>, <span class="dv">6</span>))</span>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>plt.plot(<span class="bu">range</span>(<span class="dv">1</span>, <span class="bu">len</span>(pca_full.explained_variance_ratio_) <span class="op">+</span> <span class="dv">1</span>), </span>
 <span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>         pca_full.explained_variance_ratio_.cumsum(), </span>
@@ -1332,7 +1332,7 @@ forceTheme('sk-container-id-1');</script>
 </div>
 </div>
 <p>:::</p>
-<p>::: {#cell-PCA with 13 components .cell cache=‘true’ execution_count=13}</p>
+<p>::: {#cell-PCA with 13 components .cell cache=‘true’ execution_count=14}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>pca <span class="op">=</span> PCA(n_components<span class="op">=</span><span class="dv">13</span>)</span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>principal_components <span class="op">=</span> pca.fit_transform(X_scaled)</span>
 <span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1347,7 +1347,7 @@ forceTheme('sk-container-id-1');</script>
 </section>
 <section id="pca-loading-matrix" class="level2">
 <h2 class="anchored" data-anchor-id="pca-loading-matrix">PCA Loading Matrix</h2>
-<p>::: {#cell-Loading Matrix .cell execution_count=14}</p>
+<p>::: {#cell-Loading Matrix .cell execution_count=15}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>loadings <span class="op">=</span> pd.DataFrame(</span>
 <span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>    pca.components_.T, </span>
 <span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>    columns<span class="op">=</span>[<span class="ss">f'PC</span><span class="sc">{</span>i<span class="op">+</span><span class="dv">1</span><span class="sc">}</span><span class="ss">'</span> <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(pca.n_components_)], </span>
@@ -1369,14 +1369,14 @@ forceTheme('sk-container-id-1');</script>
 </div>
 </div>
 <p>:::</p>
-<div id="umap-settings" class="cell" data-execution_count="15">
+<div id="umap-settings" class="cell" data-execution_count="16">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>reducer <span class="op">=</span> umap.UMAP(</span>
 <span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    n_neighbors<span class="op">=</span><span class="dv">50</span>, </span>
 <span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    min_dist<span class="op">=</span><span class="fl">0.01</span>, </span>
 <span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    random_state<span class="op">=</span><span class="dv">42</span></span>
 <span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="umap" class="cell" data-execution_count="16">
+<div id="umap" class="cell" data-execution_count="17">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>umap_embeddings <span class="op">=</span> reducer.fit_transform(pca_df)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stderr">
 <pre><code>/Users/melaniejensen/.pyenv/versions/3.12.12/lib/python3.12/site-packages/umap/umap_.py:1952: UserWarning: n_jobs value 1 overridden to 1 by setting random_state. Use no seed for parallelism.
@@ -1386,7 +1386,7 @@ forceTheme('sk-container-id-1');</script>
 </section>
 <section id="kmeans-cluster-scree-plot" class="level2">
 <h2 class="anchored" data-anchor-id="kmeans-cluster-scree-plot">KMeans Cluster Scree Plot</h2>
-<p>::: {#cell-identify number of clusters .cell execution_count=17}</p>
+<p>::: {#cell-identify number of clusters .cell execution_count=18}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>inertia <span class="op">=</span> []</span>
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>k_range <span class="op">=</span> <span class="bu">range</span>(<span class="dv">1</span>, <span class="dv">11</span>) </span>
 <span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1414,7 +1414,7 @@ forceTheme('sk-container-id-1');</script>
 </section>
 <section id="kmeans-clustering-on-umap" class="level2">
 <h2 class="anchored" data-anchor-id="kmeans-clustering-on-umap">KMeans Clustering on UMAP</h2>
-<p>::: {#cell-final clustering .cell execution_count=18}</p>
+<p>::: {#cell-final clustering .cell execution_count=19}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>optimal_k <span class="op">=</span> <span class="dv">13</span></span>
 <span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>final_model <span class="op">=</span> KMeans(n_clusters<span class="op">=</span>optimal_k, random_state<span class="op">=</span><span class="dv">42</span>, n_init<span class="op">=</span><span class="st">"auto"</span>)</span>
@@ -1436,7 +1436,7 @@ forceTheme('sk-container-id-1');</script>
 </section>
 <section id="hdbscan-clustering-on-umap" class="level2">
 <h2 class="anchored" data-anchor-id="hdbscan-clustering-on-umap">HDBSCAN Clustering on UMAP</h2>
-<div id="hdbscan-clustering" class="cell" data-execution_count="19">
+<div id="hdbscan-clustering" class="cell" data-execution_count="20">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">100</span>,<span class="dv">600</span>,<span class="dv">100</span>):</span>
 <span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"HDBSCAN with min_cluster_size = </span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>    clusterer <span class="op">=</span> hdbscan.HDBSCAN(min_cluster_size<span class="op">=</span>i, gen_min_span_tree<span class="op">=</span><span class="va">True</span>)</span>
@@ -1550,7 +1550,7 @@ DBCV Score: 0.128</code></pre>
 </div>
 </div>
 </div>
-<div id="cluster-profiling" class="cell" data-execution_count="20">
+<div id="cluster-profiling" class="cell" data-execution_count="21">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>numeric_parcel_data[<span class="st">'Cluster_ID'</span>] <span class="op">=</span> cluster_labels</span>
 <span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>cluster_profile <span class="op">=</span> numeric_parcel_data.groupby(<span class="st">'Cluster_ID'</span>).mean()</span>
@@ -1668,7 +1668,7 @@ See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stab
 </section>
 <section id="pca-clustering-on-umap" class="level2">
 <h2 class="anchored" data-anchor-id="pca-clustering-on-umap">PCA Clustering on UMAP</h2>
-<p>::: {#cell-PCA Clustering on UMAP .cell execution_count=21}</p>
+<p>::: {#cell-PCA Clustering on UMAP .cell execution_count=22}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>dominant_pc <span class="op">=</span> pca_df.idxmax(axis<span class="op">=</span><span class="dv">1</span>)</span>
 <span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>plt.figure(figsize<span class="op">=</span>(<span class="dv">12</span>, <span class="dv">8</span>))</span>
@@ -1693,7 +1693,20 @@ See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stab
 </div>
 <p>:::</p>
 <hr>
-<p>Key Findings: - PCA Components: - PC1: contains standard variables. - PC2: focus on recreational outdoor features (ex pools, rec courts, etc) - PC3: focus on utility outdoor features (ex sheds, barns, etc) - PC4: focus on aggrecultural vs recreational utility features (carport v barn) - PC5: focus on guest features vs personal features (guest house v gazebo) - PC6: - PC7: - PC8: - PC9: focus on external vehical storage vs general utility (detached garage v shed) - PC10: focus on attached vehical storage vs general utility (carport v shed) - PC11: focus on basement space and completion over vehical storage - PC12: focus on the land - PC13: focus on half-bath</p>
+<p>Key Findings: PCA Components: - PC1: contains standard variables.<br>
+- PC2: focus on recreational outdoor features (ex pools, rec courts, etc)<br>
+- PC3: focus on utility outdoor features (ex sheds, barns, etc)<br>
+- PC4: focus on aggrecultural vs recreational utility features (carport v barn)<br>
+- PC5: focus on guest features vs personal features (guest house v gazebo)<br>
+- PC6: focus on niche<br>
+- PC7: focus on niche<br>
+- PC8: focus on niche<br>
+- PC9: focus on external vehical storage vs general utility (detached garage v shed)<br>
+- PC10: focus on attached vehical storage vs general utility (carport v shed)<br>
+- PC11: focus on basement space and completion over vehical storage<br>
+- PC12: focus on the land<br>
+- PC13: focus on half-bath<br>
+</p>
 <p>Essentially, the standard features are evaluated in the first PC. All subsequent components look at the different combonations of features for various focuses, such as recreation, utility, etc.</p>
 <p>The first PC (standard features) account for approximately 30% of variation in the home. All other feature account for 70% of what makes one home different from one another, with the biggest focuses for differentiation being recreation, utility, and, storage. Features such as half-bathrooms, while accounting for varation take up minimal percentage of differentiation.</p>
 <p>This is specifically with Iron county properties. As the majority of these homes are rural and thus are chosen based on these features, it makes sense that they account for 70% of home variation.</p>
@@ -1704,7 +1717,7 @@ See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stab
 <h1>Supervised Learning</h1>
 <section id="create-merged-dataset" class="level2">
 <h2 class="anchored" data-anchor-id="create-merged-dataset">Create Merged Dataset</h2>
-<div id="merge_on_parcel_id" class="cell" data-execution_count="22">
+<div id="merge_on_parcel_id" class="cell" data-execution_count="23">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>parcel_export <span class="op">=</span> pd.read_excel(<span class="st">"/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx"</span>, sheet_name<span class="op">=</span><span class="st">"Full Parcel Summary"</span>)</span>
 <span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>residential_export <span class="op">=</span> pd.read_excel(<span class="st">"/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2025 MLS Residential Sales.xlsm"</span>, sheet_name <span class="op">=</span> <span class="st">"Sales"</span>)</span>
@@ -1731,7 +1744,7 @@ See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stab
 </section>
 <section id="view-merged-numeric-variables" class="level2">
 <h2 class="anchored" data-anchor-id="view-merged-numeric-variables">View Merged Numeric Variables</h2>
-<p>::: {#cell-view all numberic columns .cell execution_count=23}</p>
+<p>::: {#cell-view all numberic columns .cell execution_count=24}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>all_numeric_cols <span class="op">=</span> merged_df.select_dtypes(include<span class="op">=</span>[np.number]).columns.tolist() </span>
 <span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>all_numeric_cols.sort()</span>
 <span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>all_numeric_cols</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1818,7 +1831,7 @@ See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stab
 </section>
 <section id="view-merged-non-numeric-variables" class="level2">
 <h2 class="anchored" data-anchor-id="view-merged-non-numeric-variables">View Merged Non-Numeric Variables</h2>
-<p>::: {#cell-view all non-numeric columns .cell execution_count=24}</p>
+<p>::: {#cell-view all non-numeric columns .cell execution_count=25}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>all_non_numeric_cols <span class="op">=</span> merged_df.select_dtypes(exclude<span class="op">=</span>[np.number]).columns.tolist()</span>
 <span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>all_non_numeric_cols.sort()</span>
 <span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>all_non_numeric_cols</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1915,7 +1928,7 @@ See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stab
 </section>
 <section id="identify-city" class="level2">
 <h2 class="anchored" data-anchor-id="identify-city">Identify City</h2>
-<p>::: {#cell-city identification .cell execution_count=25}</p>
+<p>::: {#cell-city identification .cell execution_count=26}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>merged_df[<span class="st">'city'</span>] <span class="op">=</span> [res[<span class="st">'name'</span>] <span class="cf">if</span> pd.notnull(lat) <span class="kw">and</span> pd.notnull(lng) <span class="cf">else</span> <span class="st">"Unknown"</span> </span>
 <span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>              <span class="cf">for</span> res, lat, lng <span class="kw">in</span> <span class="bu">zip</span>(rg.search([(r[<span class="st">'Lat'</span>], r[<span class="st">'Lng'</span>]) <span class="cf">if</span> pd.notnull(r[<span class="st">'Lat'</span>]) <span class="cf">else</span> (<span class="dv">0</span>,<span class="dv">0</span>) </span>
 <span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>                                                  <span class="cf">for</span> _, r <span class="kw">in</span> merged_df.iterrows()]), merged_df[<span class="st">'Lat'</span>], merged_df[<span class="st">'Lng'</span>])]</span>
@@ -1940,7 +1953,7 @@ Toquerville       30
 Name: count, dtype: int64</code></pre>
 </div>
 <p>:::</p>
-<div id="find-pca-loadings" class="cell" data-execution_count="26">
+<div id="find-pca-loadings" class="cell" data-execution_count="27">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>data_to_transform <span class="op">=</span> merged_df[numeric_cols].fillna(<span class="dv">0</span>)</span>
 <span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>pt <span class="op">=</span> PowerTransformer(method<span class="op">=</span><span class="st">'yeo-johnson'</span>)</span>
@@ -1962,7 +1975,7 @@ Name: count, dtype: int64</code></pre>
 </section>
 <section id="cpi-adjusted-sales-price" class="level2">
 <h2 class="anchored" data-anchor-id="cpi-adjusted-sales-price">CPI Adjusted Sales Price</h2>
-<p>::: {#cell-cpi adjustment .cell execution_count=27}</p>
+<p>::: {#cell-cpi adjustment .cell execution_count=28}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>cpi.update()</span>
 <span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>merged_df[<span class="st">'SaleYear'</span>] <span class="op">=</span> pd.to_datetime(merged_df[<span class="st">'ReviewedDate'</span>], unit<span class="op">=</span><span class="st">'D'</span>, origin<span class="op">=</span><span class="st">'1899-12-30'</span>).dt.year</span>
@@ -2052,7 +2065,7 @@ Name: count, dtype: int64</code></pre>
 </section>
 <section id="price-evaluation" class="level2">
 <h2 class="anchored" data-anchor-id="price-evaluation">Price Evaluation</h2>
-<p>::: {#cell-price eval .cell execution_count=28}</p>
+<p>::: {#cell-price eval .cell execution_count=29}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>sns.set_theme(style<span class="op">=</span><span class="st">"whitegrid"</span>)</span>
 <span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">6</span>))</span>
 <span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>sns.histplot(merged_df[<span class="st">'Sold Price'</span>], bins<span class="op">=</span><span class="dv">50</span>, kde<span class="op">=</span><span class="va">True</span>, ax<span class="op">=</span>axes[<span class="dv">0</span>], color<span class="op">=</span><span class="st">'skyblue'</span>)</span>
@@ -2076,7 +2089,7 @@ Name: count, dtype: int64</code></pre>
 </section>
 <section id="boxcox-plot" class="level2">
 <h2 class="anchored" data-anchor-id="boxcox-plot">BoxCox Plot</h2>
-<p>::: {#cell-boxcox on cpi price .cell execution_count=29}</p>
+<p>::: {#cell-boxcox on cpi price .cell execution_count=30}</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>clean_y <span class="op">=</span> merged_df[merged_df[<span class="st">'CPI Adjusted Sold Price'</span>] <span class="op">&gt;</span> <span class="dv">0</span>][<span class="st">'CPI Adjusted Sold Price'</span>]</span>
 <span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>_, opt_lambda <span class="op">=</span> stats.boxcox(clean_y)</span>
@@ -2107,7 +2120,7 @@ Name: count, dtype: int64</code></pre>
 </section>
 <section id="price-transformation" class="level2">
 <h2 class="anchored" data-anchor-id="price-transformation">Price Transformation</h2>
-<div id="price-transformation" class="cell" data-execution_count="30">
+<div id="price-transformation" class="cell" data-execution_count="31">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a>clean_data <span class="op">=</span> merged_df[merged_df[<span class="st">'CPI Adjusted Sold Price'</span>] <span class="op">&gt;</span> <span class="dv">0</span>][<span class="st">'CPI Adjusted Sold Price'</span>]</span>
 <span id="cb54-2"><a href="#cb54-2" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">6</span>))</span>
 <span id="cb54-3"><a href="#cb54-3" aria-hidden="true" tabindex="-1"></a>sns.set_theme(style<span class="op">=</span><span class="st">"whitegrid"</span>)</span>
@@ -2145,7 +2158,7 @@ Name: Sqrt CPI Adjusted Sold Price, dtype: float64</code></pre>
 </section>
 <section id="primary-component-regression" class="level2">
 <h2 class="anchored" data-anchor-id="primary-component-regression">Primary Component Regression</h2>
-<div id="pca-model" class="cell" data-execution_count="31">
+<div id="pca-model" class="cell" data-execution_count="32">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> merged_df[[<span class="st">'PC1'</span>, <span class="st">'PC2'</span>, <span class="st">'PC3'</span>, <span class="st">'PC4'</span>, <span class="st">'PC5'</span>, <span class="st">'PC6'</span>, <span class="st">'PC7'</span>, <span class="st">'PC8'</span>, <span class="st">'PC9'</span>, <span class="st">'PC10'</span>, <span class="st">'PC11'</span>, <span class="st">'PC12'</span>, <span class="st">'PC13'</span>]]</span>
 <span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> merged_df[<span class="st">'Sqrt CPI Adjusted Sold Price'</span>]</span>
 <span id="cb56-3"><a href="#cb56-3" aria-hidden="true" tabindex="-1"></a>mask <span class="op">=</span> y.notna()</span>
@@ -2223,7 +2236,7 @@ Notes:
 </section>
 <section id="pre-pca-regression" class="level2">
 <h2 class="anchored" data-anchor-id="pre-pca-regression">Pre-PCA Regression</h2>
-<div id="pre-pca-regression" class="cell" data-execution_count="32">
+<div id="pre-pca-regression" class="cell" data-execution_count="33">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> merged_df[numeric_cols].fillna(<span class="dv">0</span>)</span>
 <span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> merged_df[<span class="st">'Sqrt CPI Adjusted Sold Price'</span>]</span>
 <span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a>mask <span class="op">=</span> y.notna()</span>
