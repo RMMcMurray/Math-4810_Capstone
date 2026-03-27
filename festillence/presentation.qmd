@@ -23,7 +23,7 @@ We are moving from raw data to non-linear structures:
 2. **Price Adjustment:**
 3. **Exploratory Analysis**
 4. **Model**
-5. **Next Steps**
+5. **Conclusion**
 
 ## Introduction
 
@@ -326,14 +326,20 @@ res_target = res_df["Trended_Price"]
 - Normalization & Transformation: We identify the need for Log-Scale Transformations. This ensures "Vertical Equity," meaning the model treats a 5% valuation error on a starter home with the same statistical weight as a 5% error on a luxury estate.
 
 ## Visual One
+::: {layout-ncol=2}
 
 ```{python}
-# | label: umap-viz-execution
-# | fig-align: center
+#| label: umap-viz-execution
 
 plot_umap_branded(res_emb_l, res_l_clusters, "Archetype Clusters", is_price=False)
+```
+
+```{python}
+#| label: Decile
+
 plot_umap_branded(res_emb_l, res_target, "Price Gradient", is_price=True)
 ```
+:::
 
 ## Visual 2
 
@@ -364,6 +370,10 @@ We discussed three distinct architectures to determine which could best model th
 ## Waterfall Plot
 
 - A vizualization
+
+# Conclusion
+
+## Final Thoughts
 
 ## Next Steps
 
