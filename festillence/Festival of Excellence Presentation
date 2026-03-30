@@ -1,12 +1,11 @@
 ---
-title: Data Science Capstone
+title: "Data Science Capstone: Commissioner's Office House Price Analysis"
 format: 
   revealjs:
     theme: league 
     transition: slide
     scrollable: true
-    logo: iron_county_logo.png 
-    footer: "Commissioner's Office - Housing Project"
+    footer: "Commissioner's Office - House Pricing Project"
 urlcolor: blue
 engine: jupyter3
 execute: 
@@ -17,30 +16,18 @@ editor_options:
   chunk_output_type: console
 ---
 
-# The Vision:
+## The Problem
 
-To build a predictive application that enables the Commissioner’s Office to estimate property values and, more importantly, explain why those prices are shifting.
+- Property values are only captured at the **point of sale**
+- Between sales, assessors must estimate value manually — no data-driven basis
+- Estimates are inconsistently applied and **difficult to defend in court**
+- The result: property tax assessments that are arbitrary and legally vulnerable
 
-## Strategy {.center}
+## Our Approach
 
--   CPI Adjustment: Normalize historical sales to today's dollar.
--   Market Segmentation: Use "Market Type" (Single-Family vs. Multi-Family) as interaction terms—recognizing that an extra bedroom in a condo adds different value than an extra bedroom on a ranch.
--   The Application: An interactive application that will output pricing predictions and add transparency in the valuation process.
-
-# Methodology
-
-## Phase 1: {.center}
-
-Feature Drivers: Identify the drivers of what makes properties different. 
-These drivers are found in my PCA. Drivers that have been found will be discussed later on.
-
-## Phase 2: {.center}
-
-Price Sub-Markets: Identify the sub-markets within housing markets (housing markets: single family, multi-family, etc.) These sub-markets are found in Ryan and Lucca's UMAPS.
-
-## Phase 3: {.center}
-
-Price Prediction: Utilize findings from feature extraction and sub-market classifications to then predict housing prices, adjusting for CPI in the process. The goal of these models is to capture 90% or more of the variation in price. These predictions are currently being curated!
+- **Phase 1 — Understanding the Market:** Identify what drives property value and uncover natural sub-markets in the data
+- **Phase 2 — Building the Model:** Predict property value from numerical and non-numerical features, adjusted for market trends
+- **Phase 3 — The Application:** A tool for assessors to input property features and receive a defensible, data-backed value estimate
 
 ```{python}
 #| label: Initial Imports
@@ -54,6 +41,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import seaborn as sns
 import sklearn
+from umap import UMAP
 import umap
 from scipy import stats
 from sklearn.decomposition import PCA
@@ -74,10 +62,16 @@ import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tools.tools import add_constant
 
+import statsmodels.formula.api as smf
+import matplotlib.dates as mdates
+import plotly.express as px
+import pwlf
+from scipy.stats import rankdata
+
 ```
 
 ```{python}
-#| label: function creation
+#| label: melanie setup
 #| include: false
 
 def normalize(df):
@@ -119,44 +113,20 @@ def normalize(df):
     print(f"Experiments complete for {len(numeric_cols)} variables.")
     return df_comp
 
-```
-
-```{python}
-#| label: Read in Parcel Export Sheet 2
-#| include: false
-
 parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
 parcel_export.head()
 parcel_export.shape # (53277, 53)
 parcel_export.info()
-
-```
-
-```{python}
-#| label: Non-numeric columns
-#| include: false
 
 non_numeric_cols = parcel_export.select_dtypes(exclude=[np.number]).columns.tolist()
 parcel_export[non_numeric_cols].shape # (53277, 12)
 parcel_export[non_numeric_cols].info()
 parcel_export[non_numeric_cols].columns
 
-```
-
-```{python}
-#| label: Numeric columns
-#| include: false
-
 numeric_cols = parcel_export.select_dtypes(include=[np.number]).columns.tolist() 
 parcel_export[numeric_cols].shape # (53277, 41)
 parcel_export[numeric_cols].info() 
 parcel_export[numeric_cols].columns
-
-```
-
-```{python}
-#| label: Numeric Column Adjustment
-#| include: false
 
 cols_to_move = ['TaxYear', 'ImpOnly', 'PropType ', 'Jurisdiction', 'SpecificPropType', 'Lat', 'Lng', 'ReviewedDate', 'ImpCode', 'Res Imp Count']
 non_numeric_cols = list(set(non_numeric_cols) | set(cols_to_move))
@@ -164,48 +134,18 @@ numeric_cols = [c for c in parcel_export.columns if c not in non_numeric_cols]
 
 parcel_export[numeric_cols].shape # (53277, 31)
 
-```
-
-```{python}
-#| label: Fill in NAs for numeric columns with 0
-#| include: false
-
 parcel_export[numeric_cols] = parcel_export[numeric_cols].fillna(0)
-
-```
-
-```{python}
-#| label: Filter Parcel Export for PCA (only numeric columns)
-#| include: false
 
 numeric_parcel_data = parcel_export[numeric_cols]
 
 numeric_parcel_data.shape # (53277, 24)
 numeric_parcel_data.info()
 
-```
-
-```{python}
-#| label: Perform Transformations
-#| include: false
-
 df_competition = normalize(numeric_parcel_data)
 df_competition.columns
 
-```
-
-```{python}
-#| label: Scaling the data for PCA
-#| include: false
-
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(df_competition)
-
-```
-
-```{python}
-#| label: PCA and Scree Plot
-#| include: false
 
 pca_full = PCA(n_components=None)
 pca_full.fit(X_scaled)
@@ -214,21 +154,17 @@ pca_full.fit(X_scaled)
 
 # Current Insights (Phase 1)
 
-## Insights: "The Standard vs. The Luxury" {.center}
+## The Standard vs. The Luxury {.center}
+:::: {.columns}
 
-Finding: Only 30% of property variation is driven by "Standard Features" (Bed/Bath/Sqft).
-
-The "So What?": 70% of what makes properties in Iron County unique comes from "Luxury" or "Nuance" features (sheds, pools, etc.). Interesting feature fact: Half Baths act like a "luxury" feature in the data.
-
-Actionable Step: Our model cannot just look at the basics; we must include these "luxury" indicators to reach our 90% accuracy goal.
-
-## PCA Scree Plot  {.center}
+::: {.column width="40%"}
 
 ```{python}
-#| label: Scree Plot to optimize number of components
+#| label: scree-plot-cumulative
+#| plt.figure: true
 #| cache: true
-#| fig-width: 8
-#| fig-height: 6
+#| warning: false
+#| message: false
 
 plt.figure(figsize=(8, 6))
 plt.plot(range(1, len(pca_full.explained_variance_ratio_) + 1), 
@@ -240,11 +176,26 @@ plt.ylabel('Cumulative Explained Variance')
 plt.grid()
 plt.show()
 
+pca = PCA(n_components=13)
+principal_components = pca.fit_transform(X_scaled)
+
+pca_df = pd.DataFrame(data=principal_components, columns=[
+    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13'])
+
+#pca.explained_variance_ratio_.sum()
+
 ```
+
+:::
+
+::: {.column width="60%"}
 
 ```{python}
 #| label: PCA with 13 components
+#| fig-height: 10
 #| include: false
+#| warning: false
+#| message: false
 
 pca = PCA(n_components=13)
 principal_components = pca.fit_transform(X_scaled)
@@ -256,14 +207,12 @@ pca.explained_variance_ratio_.sum()
 
 ```
 
-## PCA Loading Matrix  {.center}
-:::: {.columns}
-
-::: {.column width="60%"}
 ```{python}
-#| label: Loading Matrix
-#| ig-width: 8
-#| fig-height: 6
+#| label: Loading_Matrix
+#| out-width: "40%"
+#| out-height: "40%"
+#| warning: false
+#| message: false
 
 loadings = pd.DataFrame(
     pca.components_.T, 
@@ -271,8 +220,8 @@ loadings = pd.DataFrame(
     index=df_competition.columns
 )
 
-plt.figure(figsize=(12, 8))
-sns.heatmap(loadings, annot=True, cmap='RdBu', center=0)
+plt.figure(figsize=(10, 6))
+sns.heatmap(loadings, annot=loadings.round(2), fmt='.3g', cmap='RdBu', center=0)
 
 plt.title('Feature Loadings: Correlation between Original Variables and PCs')
 plt.xlabel('Principal Components')
@@ -280,974 +229,432 @@ plt.ylabel('Original Features')
 plt.show()
 
 ```
+
 :::
-::: {.column width="40%"} 
-PCA Components: - PC1: contains standard variables.\
-- PC2: focus on recreational outdoor features (ex pools, rec courts, etc)\
-- PC3: focus on utility outdoor features (ex sheds, barns, etc)\
-- PC4: focus on aggrecultural vs recreational utility features (carport v barn)\
-- PC5: focus on guest features vs personal features (guest house v gazebo)\
-- PC6: focus on niche\
-- PC7: focus on niche\
-- PC8: focus on niche\
-- PC9: focus on external vehical storage vs general utility (detached garage v shed)\
-- PC10: focus on attached vehical storage vs general utility (carport v shed)\
-- PC11: focus on basement space and completion over vehical storage\
-- PC12: focus on the land\
-- PC13: focus on half-bath\
+
 ::::
+
+## Sub-Markets {.center}
+
 ```{python}
-#| label: umap settings
+#| label: ryan-setup
 #| include: false
 
-reducer = umap.UMAP(
-    n_neighbors=50, 
-    min_dist=0.01, 
-    random_state=42
+res = pd.read_excel(
+    "/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2025 MLS Residential Sales.xlsm", sheet_name="Sales").assign(segment="Residential")
+
+multi = pd.read_excel(
+    "/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 Multi-Family MLS Export.xlsm", sheet_name="textexport (3)").assign(segment="Multi-Family")
+
+land = pd.read_excel(
+    "/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 MLS Land Sales.xlsm", sheet_name="Sales").assign(segment="Land Sales")
+
+# Stack and Merge
+all_sales = pd.concat([res, multi, land], ignore_index=True)
+parcels = parcel_export
+
+df_combined = pd.merge(
+    all_sales, parcels, left_on="Parcel Number", right_on="ParcelId", how="left"
+)
+df_combined["Sold Date"] = pd.to_datetime(df_combined["Sold Date"])
+
+# Create res_df for the segmentation section later
+res_df = df_combined[df_combined["segment"] == "Residential"].copy()
+
+df_combined["Adj_Price"] = df_combined["Sold Price"] - df_combined[
+    "Concessions Amount"
+].fillna(0)
+df_combined = df_combined[df_combined["Adj_Price"] > 0].copy()
+df_combined["ln_Price"] = np.log(df_combined["Adj_Price"])
+df_combined["ln_GLA"] = np.log(df_combined["Total SqFt"].replace(0, np.nan))
+
+start_date = pd.Timestamp("2021-01-01")
+lien_date = pd.Timestamp("2026-01-01")
+x_days = (df_combined["Sold Date"] - start_date).dt.days.values
+
+pw_model = pwlf.PiecewiseLinFit(x_days, df_combined["ln_Price"].values)
+knots_days = pw_model.fit(3)
+knot_dates = [start_date + pd.Timedelta(days=int(k)) for k in knots_days]
+
+for i in range(len(knot_dates) - 1):
+    col_name = f"Time_{i + 1}"
+    start, end = knot_dates[i], knot_dates[i + 1]
+    df_combined[col_name] = df_combined["Sold Date"].apply(
+        lambda x: max(0, (min(x, end) - start).days / 30.44) if pd.notna(x) else 0
+    )
+
+df_combined["Trended_Price"] = df_combined["Adj_Price"].copy()
+time_cols = [c for c in df_combined.columns if c.startswith("Time_")]
+
+for seg in ["Residential", "Multi-Family", "Land Sales"]:
+    df_seg = df_combined[df_combined["segment"] == seg].copy()
+    if len(df_seg) < 20:
+        continue
+    valid_buckets = [col for col in time_cols if df_seg[col].max() > 0]
+    formula = (
+        f"ln_Price ~ {' + '.join(valid_buckets)} + ln_GLA + Q('Year Built')"
+        if seg != "Land Sales"
+        else f"ln_Price ~ {' + '.join(valid_buckets)}"
+    )
+    try:
+        res_ols = smf.ols(
+            formula,
+            data=df_seg.dropna(
+                subset=["ln_GLA", "Year Built"] if seg != "Land Sales" else []
+            ),
+        ).fit()
+        # Trending Logic
+        adj_log = 0
+        for idx, col in enumerate(time_cols):
+            if col in res_ols.params:
+                remaining = (
+                    (knot_dates[idx + 1] - knot_dates[idx]).days / 30.44
+                ) - df_combined.loc[df_combined["segment"] == seg, col]
+                adj_log += res_ols.params[col] * np.maximum(0, remaining)
+        df_combined.loc[df_combined["segment"] == seg, "Trended_Price"] *= np.exp(
+            adj_log
+        )
+    except:
+        pass
+
+# Data Preparation
+df_plot = df_combined[
+    (df_combined["segment"] == "Residential") & (df_combined["Total SqFt"] > 100)
+].copy()
+
+# Calculate Unit Prices
+df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot["Total SqFt"]
+df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot["Total SqFt"]
+
+# Outlier Cleaning
+y_limit = df_plot["Price_SqFt_Original"].quantile(0.98)
+df_plot = df_plot[df_plot["Price_SqFt_Original"] < y_limit]
+
+# Numeric conversion for regression plotting
+df_plot["date_num"] = mdates.date2num(df_plot["Sold Date"])
+
+# Plotting
+plt.figure(figsize=(16, 8))
+
+# Original Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Original",
+    scatter_kws={"alpha": 0.1, "color": "gray", "s": 12},
+    line_kws={
+        "color": "#e74c3c",
+        "label": "Original Market (Volatile)",
+        "linewidth": 3,
+    },
+    lowess=True,
 )
 
-```
+# Trended Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Trended",
+    scatter=False,
+    line_kws={
+        "color": "#3498db",
+        "label": f"Trended to {lien_date.date()} (Stabilized)",
+        "linewidth": 4,
+    },
+    lowess=False,
+)
 
-```{python}
-#| label: UMAP
-#| include: false
+# The Splines
+for s in knot_dates:
+    plt.axvline(
+        mdates.date2num(s), color="black", linestyle="--", alpha=0.2, label="_nolegend_"
+    )
 
-umap_embeddings = reducer.fit_transform(pca_df)
+# Formatting for Revealjs
+ax = plt.gca()
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+plt.ylim(0, y_limit)
+plt.title("Residential Housing Market Stabilization", fontsize=22, pad=20)
+plt.ylabel("Price per Square Foot ($)", fontsize=14)
+plt.xlabel("Sale Date", fontsize=14)
+plt.legend(
+    loc="upper left", fontsize=13, frameon=True, facecolor="white", framealpha=0.9
+)
+plt.grid(axis="y", alpha=0.15)
 
-```
-
-```{python}
-#| label: identify number of clusters
-#| include: false
-
-inertia = []
-k_range = range(1, 11) 
-
-for k in k_range:
-    kmeans_test = KMeans(n_clusters=k, random_state=42, n_init="auto")
-    kmeans_test.fit(pca_df)
-    inertia.append(kmeans_test.inertia_)
-
-plt.figure(figsize=(8, 4))
-plt.plot(k_range, inertia, marker='o', linestyle='--')
-plt.title('Elbow Method to Identify Optimal Clusters')
-plt.xlabel('Number of Clusters (k)')
-plt.ylabel('Inertia (Within-Cluster Sum of Squares)')
-plt.xticks(k_range)
-plt.grid(True)
+plt.tight_layout()
 plt.show()
 
-```
 
-```{python}
-#| label: final clustering
-#| include: false
+# --- CORE UTILITIES ---
+def get_scaled_data(df):
+    # Strictly isolate numbers BEFORE doing any math
+    X = df.select_dtypes(include=[np.number]).fillna(0)
+    # Remove columns with zero variance (they break PCA)
+    X = X.loc[:, X.var() > 1e-4]
+    return StandardScaler().fit_transform(X)
 
-optimal_k = 13
 
-final_model = KMeans(n_clusters=optimal_k, random_state=42, n_init="auto")
-labels = final_model.fit_predict(umap_embeddings)
+def get_umap_embedding(scaled_data, nn, md):
+    # Reduce dimensions via PCA first for UMAP stability
+    pca_data = PCA(n_components=0.9).fit_transform(scaled_data)
+    reducer = umap.UMAP(n_neighbors=nn, min_dist=md, random_state=42)
+    return reducer.fit_transform(pca_data)
 
-plt.figure(figsize=(10, 7))
-plt.scatter(umap_embeddings[:, 0], umap_embeddings[:, 1], c=labels, cmap='viridis', s=5)
-plt.colorbar(label='Cluster Label')
-plt.title(f"UMAP Projection with {optimal_k} K-Means Clusters")
-plt.show()
 
-```
+def get_clusters(pca_data, min_size=20):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_size, prediction_data=True)
+    return clusterer.fit_predict(pca_data)
 
-```{python}
-#| label: HDBSCAN Clustering
-#| include: false
 
-for i in range(100,600,100):
-    print(f"HDBSCAN with min_cluster_size = {i}")
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=i, gen_min_span_tree=True)
-    cluster_labels = clusterer.fit_predict(umap_embeddings)
-
-    n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
-
-    score = validity.validity_index(umap_embeddings.astype('double'), cluster_labels)
-    print(f"DBCV Score: {score:.3f}")
-
-    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
-    plt.figure(figsize=(10, 8))
-    plt.scatter(
-        umap_embeddings[:, 0], 
-        umap_embeddings[:, 1], 
-        c=cluster_labels,      
-        cmap='Spectral', 
-        s=5)
-    plt.title('Housing Clusters via HDBSCAN (Organic Shapes)')
-    plt.colorbar(label='Cluster Label')
-    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
+# --- VISUALIZATION WRAPPERS ---
+def plot_umap_branded(embedding, color_source, title, is_price=True):
+    plt.figure(figsize=(10, 6))
+    if is_price:
+        price_ranks = rankdata(color_source) / len(color_source)
+        scatter = plt.scatter(
+            embedding[:, 0],
+            embedding[:, 1],
+            c=price_ranks,
+            cmap="viridis",
+            s=10,
+            alpha=0.6,
+        )
+        plt.colorbar(scatter).set_label("Price Percentile (0=Low, 1=High)")
+    else:
+        unique_labels = np.unique(color_source)
+        cmap = plt.get_cmap("tab10", len(unique_labels))
+        for i, label in enumerate(unique_labels):
+            mask = color_source == label
+            plt.scatter(
+                embedding[mask, 0],
+                embedding[mask, 1],
+                label=f"Cluster {label}" if label != -1 else "Noise",
+                s=15,
+                alpha=0.8,
+                color=cmap(i),
+            )
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.title(title)
+    plt.tight_layout()
     plt.show()
 
-```
 
-```{python}
-#| label: Cluster Profiling
-#| include: false
+def plot_pca_heatmap(pca_model, df_features):
+    # FIX: Isolate numeric columns specifically to avoid String -> Float errors
+    numeric_df = df_features.select_dtypes(include=[np.number]).fillna(0)
+    kept_columns = numeric_df.columns[numeric_df.var() > 1e-4]
 
-numeric_parcel_data['Cluster_ID'] = cluster_labels
+    # Create the loadings dataframe
+    loadings_df = pd.DataFrame(pca_model.components_.T, index=kept_columns)
 
-cluster_profile = numeric_parcel_data.groupby('Cluster_ID').mean()
+    plt.figure(figsize=(12, 8))
+    # Show only top 15 features to keep the heatmap readable
+    sns.heatmap(loadings_df.head(15), annot=True, cmap="RdBu_r", center=0, fmt=".2f")
+    plt.title("PCA Loadings: Feature Correlation to Components")
+    plt.show()
 
-print(cluster_profile.T)
 
-```
+# --- EXECUTION ---
+# Ensure res_df is defined from the main df_combined
+res_df = df_combined[df_combined["segment"] == "Residential"].copy()
 
-```{python}
-#| label: PCA Clustering on UMAP
-#| include: false
-
-dominant_pc = pca_df.idxmax(axis=1)
-
-plt.figure(figsize=(12, 8))
-sns.scatterplot(
-    x=umap_embeddings[:, 0], 
-    y=umap_embeddings[:, 1], 
-    hue=dominant_pc, 
-    palette='tab20',
-    s=10,
-    alpha=0.8
+# Drop columns that shouldn't be used for clustering/PCA
+res_features = res_df.drop(
+    columns=["Sold Price", "Adj_Price", "Trended_Price", "List Number", "ParcelId"],
+    errors="ignore",
 )
 
-plt.title("UMAP Colored by Most Dominant Principal Component (PC1-PC13)")
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper right', title='Dominant PC')
-plt.show()
+res_scaled = get_scaled_data(res_features)
+res_pca_model = PCA(n_components=0.9).fit(res_scaled)
+res_pca_data = res_pca_model.transform(res_scaled)
+res_emb_l = get_umap_embedding(res_scaled, nn=15, md=0.01)
+res_l_clusters = get_clusters(res_pca_data, min_size=30)
+res_target = res_df["Trended_Price"]
 
 ```
 
+::: {layout-ncol=2}
+
 ```{python}
-#| label: merge_on_parcel_id
-#| include: false
+#| label: umap-viz-execution
 
-parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
-
-residential_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2025 MLS Residential Sales.xlsm", sheet_name = "Sales")
-
-land_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 MLS Land Sales.xlsm", sheet_name = "Sales")
-
-multi_fam_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 Multi-Family MLS Export.xlsm", sheet_name = "textexport (3)")
-
-res = residential_export.rename(columns={'Parcel Number': 'ParcelId'})
-land = land_export.rename(columns={'Parcel Number': 'ParcelId'})
-multi = multi_fam_export.rename(columns={'Parcel Number': 'ParcelId'})
-
-property_pool = pd.concat([res, land, multi], ignore_index=True, sort=False)
-
-merged_df = pd.merge(
-    parcel_export, 
-    property_pool, 
-    on='ParcelId', 
-    how='left'
-)
-
-# merged_df.to_csv('all_merged_w_parcel.csv', index=False)
-
+plot_umap_branded(res_emb_l, res_l_clusters, "Archetype Clusters", is_price=False)
 ```
 
 ```{python}
-#| label: view all numberic columns
-#| include: false
+#| label: Decile
 
-all_numeric_cols = merged_df.select_dtypes(include=[np.number]).columns.tolist() 
-all_numeric_cols.sort()
-all_numeric_cols
-
+plot_umap_branded(res_emb_l, res_target, "Price Gradient", is_price=True)
 ```
 
-```{python}
-#| label: view all non-numeric columns
-#| include: false
+:::
 
-all_non_numeric_cols = merged_df.select_dtypes(exclude=[np.number]).columns.tolist()
-all_non_numeric_cols.sort()
-all_non_numeric_cols
+# Current Insights (Phase 2)
 
-```
+## Prices After Stabalization
 
 ```{python}
-#| label: city identification
-#| include: false
+# | label: unified_price_adjustment
+# | message: false
+# | warning: false
 
-merged_df['city'] = [res['name'] if pd.notnull(lat) and pd.notnull(lng) else "Unknown" 
-              for res, lat, lng in zip(rg.search([(r['Lat'], r['Lng']) if pd.notnull(r['Lat']) else (0,0) 
-                                                  for _, r in merged_df.iterrows()]), merged_df['Lat'], merged_df['Lng'])]
+df_combined["Adj_Price"] = df_combined["Sold Price"] - df_combined[
+    "Concessions Amount"
+].fillna(0)
+df_combined = df_combined[df_combined["Adj_Price"] > 0].copy()
+df_combined["ln_Price"] = np.log(df_combined["Adj_Price"])
+df_combined["ln_GLA"] = np.log(df_combined["Total SqFt"].replace(0, np.nan))
 
-merged_df['city'].value_counts()
+start_date = pd.Timestamp("2021-01-01")
+lien_date = pd.Timestamp("2026-01-01")
+x_days = (df_combined["Sold Date"] - start_date).dt.days.values
 
-```
+pw_model = pwlf.PiecewiseLinFit(x_days, df_combined["ln_Price"].values)
+knots_days = pw_model.fit(3)
+knot_dates = [start_date + pd.Timedelta(days=int(k)) for k in knots_days]
 
-```{python}
-#| label: find pca loadings
-#| include: false
+for i in range(len(knot_dates) - 1):
+    col_name = f"Time_{i + 1}"
+    start, end = knot_dates[i], knot_dates[i + 1]
+    df_combined[col_name] = df_combined["Sold Date"].apply(
+        lambda x: max(0, (min(x, end) - start).days / 30.44) if pd.notna(x) else 0
+    )
 
-data_to_transform = merged_df[numeric_cols].fillna(0)
+df_combined["Trended_Price"] = df_combined["Adj_Price"].copy()
+time_cols = [c for c in df_combined.columns if c.startswith("Time_")]
 
-pt = PowerTransformer(method='yeo-johnson')
-
-transformed_data = pd.DataFrame(index=data_to_transform.index)
-
-for i in data_to_transform.columns:
-    new_col_name = f"{i}_inv"
-    transformed_data[new_col_name] = pt.fit_transform(data_to_transform[[i]])
-
-scaled_data = scaler.fit_transform(transformed_data)
-
-pca_output = pca.transform(scaled_data)
-
-pca_cols = [f'PC{i+1}' for i in range(pca.n_components_)]
-pca_df = pd.DataFrame(pca_output, columns=pca_cols, index=merged_df.index)
-merged_df = pd.concat([merged_df, pca_df], axis=1)
-
-```
-
-```{python}
-#| label: cpi adjustment
-#| include: false
-
-cpi.update()
-
-merged_df['SaleYear'] = pd.to_datetime(merged_df['ReviewedDate'], unit='D', origin='1899-12-30').dt.year
-
-unique_years = [int(y) for y in merged_df['SaleYear'].unique() if pd.notna(y)]
-cpi_lookup = {}
-for year in unique_years:
+for seg in ["Residential", "Multi-Family", "Land Sales"]:
+    df_seg = df_combined[df_combined["segment"] == seg].copy()
+    if len(df_seg) < 20:
+        continue
+    valid_buckets = [col for col in time_cols if df_seg[col].max() > 0]
+    formula = (
+        f"ln_Price ~ {' + '.join(valid_buckets)} + ln_GLA + Q('Year Built')"
+        if seg != "Land Sales"
+        else f"ln_Price ~ {' + '.join(valid_buckets)}"
+    )
     try:
-        cpi_lookup[year] = cpi.get(year)
-    except Exception:
-        cpi_lookup[year] = cpi.get(2024)
-target_cpi = cpi.get(2024)
-
-merged_df['cpi_index_at_sale'] = merged_df['SaleYear'].map(cpi_lookup)
-merged_df['CPI Adjusted Sold Price'] = (merged_df['Sold Price'] * target_cpi) / merged_df['cpi_index_at_sale']
-
-merged_df[['Sold Price', 'CPI Adjusted Sold Price']].describe()
-
+        res_ols = smf.ols(
+            formula,
+            data=df_seg.dropna(
+                subset=["ln_GLA", "Year Built"] if seg != "Land Sales" else []
+            ),
+        ).fit()
+        # Trending Logic
+        adj_log = 0
+        for idx, col in enumerate(time_cols):
+            if col in res_ols.params:
+                remaining = (
+                    (knot_dates[idx + 1] - knot_dates[idx]).days / 30.44
+                ) - df_combined.loc[df_combined["segment"] == seg, col]
+                adj_log += res_ols.params[col] * np.maximum(0, remaining)
+        df_combined.loc[df_combined["segment"] == seg, "Trended_Price"] *= np.exp(
+            adj_log
+        )
+    except:
+        pass
 ```
 
 ```{python}
-#| label: price eval
-#| include: false
+# | label: trend_visualization_refined
+# | code-fold: true
 
-sns.set_theme(style="whitegrid")
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-sns.histplot(merged_df['Sold Price'], bins=50, kde=True, ax=axes[0], color='skyblue')
-axes[0].set_title('Original Sold Price (Nominal)', fontsize=14)
-axes[0].set_xlabel('Price ($)')
-axes[0].xaxis.set_major_formatter(ticker.StrMethodFormatter('${x:,.0f}'))
-sns.histplot(merged_df['CPI Adjusted Sold Price'], bins=50, kde=True, ax=axes[1], color='salmon')
-axes[1].set_title('CPI Adjusted Sold Price (Real 2025$)', fontsize=14)
-axes[1].set_xlabel('Price ($)')
-axes[1].xaxis.set_major_formatter(ticker.StrMethodFormatter('${x:,.0f}'))
-plt.tight_layout()
-plt.show()
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
 
-```
+# Data Preparation
+df_plot = df_combined[
+    (df_combined["segment"] == "Residential") & (df_combined["Total SqFt"] > 100)
+].copy()
 
-```{python}
-#| label: boxcox on cpi price
-#| include: false
+# Calculate Unit Prices
+df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot["Total SqFt"]
+df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot["Total SqFt"]
 
-clean_y = merged_df[merged_df['CPI Adjusted Sold Price'] > 0]['CPI Adjusted Sold Price']
+# Outlier Cleaning
+y_limit = df_plot["Price_SqFt_Original"].quantile(0.98)
+df_plot = df_plot[df_plot["Price_SqFt_Original"] < y_limit]
 
-_, opt_lambda = stats.boxcox(clean_y)
-fig, ax = plt.subplots(figsize=(10, 6))
+# Numeric conversion for regression plotting
+df_plot["date_num"] = mdates.date2num(df_plot["Sold Date"])
 
-stats.boxcox_normplot(clean_y, -20, 20, plot=ax)
+# Plotting
+plt.figure(figsize=(16, 8))
 
-ax.axvline(opt_lambda, color='red', linestyle='--', label=f'Optimal $\lambda$: {opt_lambda:.4f}')
-
-plt.legend()
-plt.title('Box-Cox Log-Likelihood Plot')
-plt.grid(True, alpha=0.3)
-plt.show()
-
-```
-
-```{python}
-#| label: price transformation
-#| include: false
-
-clean_data = merged_df[merged_df['CPI Adjusted Sold Price'] > 0]['CPI Adjusted Sold Price']
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-sns.set_theme(style="whitegrid")
-sns.histplot(np.log1p(clean_data), bins=50, kde=True, ax=axes[0], color='teal')
-axes[0].set_title('Log Transformed Price', fontsize=14)
-axes[0].set_xlabel('Log(Price)')
-sns.histplot(np.sqrt(clean_data), bins=50, kde=True, ax=axes[1], color='purple')
-axes[1].set_title('Square Root Transformed Price', fontsize=14)
-axes[1].set_xlabel('Sqrt(Price)')
-plt.tight_layout()
-plt.show()
-
-merged_df['Sqrt CPI Adjusted Sold Price'] = np.sqrt(merged_df['CPI Adjusted Sold Price'])
-
-merged_df['Sqrt CPI Adjusted Sold Price'].describe()
-
-```
-
-```{python}
-#| label: pca model
-#| include: false
-
-X = merged_df[['PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13']]
-y = merged_df['Sqrt CPI Adjusted Sold Price']
-mask = y.notna()
-X, y = X[mask], y[mask]
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-X_with_const = sm.add_constant(X_train)
-sm_model = sm.OLS(y_train, X_with_const).fit()
-
-print(sm_model.summary())
-
-vif_data = pd.DataFrame()
-vif_data["feature"] = X_with_const.columns
-vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
-                   for i in range(len(X_with_const.columns))]
-
-print(vif_data.sort_values(by="VIF", ascending=False))
-
-```
-
-```{python}
-#| label: pre-pca regression
-#| include: false
-
-X = merged_df[numeric_cols].fillna(0)
-y = merged_df['Sqrt CPI Adjusted Sold Price']
-mask = y.notna()
-X, y = X[mask], y[mask]
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-X_with_const = sm.add_constant(X_train)
-sm_model = sm.OLS(y_train, X_with_const).fit()
-
-print(sm_model.summary())
-
-vif_data = pd.DataFrame()
-vif_data["feature"] = X_with_const.columns
-vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
-                   for i in range(len(X_with_const.columns))]
-
-print(vif_data.sort_values(by="VIF", ascending=False))
-
-```
-
-# Road Map & Next Steps
-
-## CPI Adjustments {.center}
-
-Reasoning: Due to inflation, the value of a dollar today is not the same as it was a year ago or will be in a year. To ensure that all of the dollar amounts we are predicting equate to the same value, we need to adjust for these market fluxuations.
-
-Role of the Students: Our role is to prepare the data for the adjustments by consolidating insights about markets and sub-markets in with a master dataset for the Commissioners office to work with.
-
-Role of the Commissioner Office: The role of the commissioner office is to conduct the CPI adjustments on the master dataset and return it back to the students for model integration.
-
-## Modeling {.center}
-
-Modeling: As we move into the modeling, we want to combine insights from the unsupervised modeling into our supervised modeling process. As mentioned previously, we will want to add interaction variables for markets and sub-markets. Another interaction variable that may be beneficial is location, as rural areas may be priced differently compared to urban areas. As previously mentioned, the goal of the modeling is to account for 90% or more of the variation in price.
-
-Validation: As we model, we need to validate the models so that the predictions can be trusted.
-
-## Application {.center}
-
-Deployment: Once a model is chosen, it will then be implemented into a user-friendly platform for the Commissioners Office, such that predictions and drivers are identified.
-
-
-
-
-```{python}
-#| label: pca all data
-#| include: false
-
-pcadata = merged_df
-
-num_cols = merged_df.select_dtypes(include='number').columns
-print(num_cols)
-num_cols = num_cols.drop(['TaxYear', 'Lat', 'Lng', 'ReviewedDate', 'List Number', 'End Date', 'Fallthrough Date', 'Withdrawal Date', 'Cancel Date', 'Original List Price', 'List Price', 'Sold Price', 'MLS Area', 'Postal Code','Sold Price Per/SqFt', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11','PC12', 'PC13', 'SaleYear', 'cpi_index_at_sale', 'CPI Adjusted Sold Price', 'Sqrt CPI Adjusted Sold Price'])
-pcadata_num = merged_df[num_cols].fillna(0).astype('float32')
-
-pt = PowerTransformer(method='yeo-johnson', standardize=True)
-pcascaled_data = pt.fit_transform(pcadata_num)
-
-pca_full = PCA(n_components=None)
-pca_full.fit(pcascaled_data)
-
-cumulative_variance = pca_full.explained_variance_ratio_.cumsum()
-n_components_90 = np.argmax(cumulative_variance >= 0.9) + 1
-
-plt.figure(figsize=(8, 6))
-plt.plot(range(1, len(pca_full.explained_variance_ratio_) + 1), 
-         pca_full.explained_variance_ratio_.cumsum(), 
-         marker='o', linestyle='--')
-plt.axhline(y=0.9, color='r', linestyle=':', label='90% Threshold')
-plt.axvline(x=n_components_90, color='g', linestyle=':', 
-            label=f'Optimal: {n_components_90} Components')
-plt.title('Scree Plot (Cumulative Variance)')
-plt.xlabel('Number of Components')
-plt.ylabel('Cumulative Explained Variance')
-plt.grid()
-plt.show()
-
-pca = PCA(n_components=20)
-principal_components = pca.fit_transform(pcascaled_data)
-pca_transformed_values = pca.transform(pcascaled_data) 
-
-pca_df = pd.DataFrame(data=principal_components, columns=[
-    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14' ,'PC15', 'PC16', 'PC17', 'PC18', 'PC19', 'PC20'])
-
-pca.explained_variance_ratio_.sum()
-
-loadings = pd.DataFrame(
-    pca.components_.T, 
-    columns=[f'PC{i+1}' for i in range(pca.n_components_)], 
-    index=pcadata_num.columns
+# Original Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Original",
+    scatter_kws={"alpha": 0.1, "color": "gray", "s": 12},
+    line_kws={
+        "color": "#e74c3c",
+        "label": "Original Market (Volatile)",
+        "linewidth": 3,
+    },
+    lowess=True,
 )
 
-plt.figure(figsize=(12, 8))
-sns.heatmap(loadings, annot=False, cmap='RdBu', center=0)
-
-plt.title('Feature Loadings: Correlation between Original Variables and PCs')
-plt.xlabel('Principal Components')
-plt.ylabel('Original Features')
-plt.show()
-
-pca_cols = [f'PC{i+1}' for i in range(pca.n_components_)]
-pca_df = pd.DataFrame(pca_transformed_values, columns=pca_cols, index=pcadata.index)
-pcadata = pd.concat([pcadata, pca_df], axis=1)
-
-```
-
-```{python}
-#| label: all pca regression
-#| include: false
-
-pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
-
-X = pcadata[[
-    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14' ,'PC15', 'PC16', 'PC17', 'PC18', 'PC19', 'PC20']]
-y = pcadata['CPI Adjusted Sold Price']
-mask = y.notna()
-X, y = X[mask], y[mask]
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-X_with_const = sm.add_constant(X_train)
-sm_model = sm.OLS(y_train, X_with_const).fit()
-
-print(sm_model.summary())
-
-vif_data = pd.DataFrame()
-vif_data["feature"] = X_with_const.columns
-vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
-                   for i in range(len(X_with_const.columns))]
-
-print(vif_data.sort_values(by="VIF", ascending=False))
-
-```
-
-```{python}
-#| label: model validation for all pca
-#| include: false
-
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import seaborn as sns
-
-plt.figure(figsize=(10, 6))
-sns.residplot(x=sm_model.fittedvalues, y=sm_model.resid, lowess=True, 
-              line_kws={'color': 'red', 'lw': 1})
-plt.title('Residuals vs Fitted (Checking Homoscedasticity)')
-plt.xlabel('Fitted Values (Predicted Price)')
-plt.ylabel('Residuals')
-plt.show()
-
-# 2. Q-Q Plot (Checking Normality)
-fig, ax = plt.subplots(figsize=(8, 6))
-sm.qqplot(sm_model.resid, line='45', fit=True, ax=ax)
-plt.title('Normal Q-Q Plot (Checking Residual Distribution)')
-plt.show()
-
-```
-
-```{python}
-#| label: all pca regression take 2
-#| include: false
-
-pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
-
-X = pcadata[[
-    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14' ,'PC15', 'PC16', 'PC17', 'PC18', 'PC19', 'PC20']]
-y = np.log(pcadata['CPI Adjusted Sold Price'])
-mask = y.notna()
-X, y = X[mask], y[mask]
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-X_with_const = sm.add_constant(X_train)
-sm_model = sm.OLS(y_train, X_with_const).fit()
-
-print(sm_model.summary())
-
-vif_data = pd.DataFrame()
-vif_data["feature"] = X_with_const.columns
-vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
-                   for i in range(len(X_with_const.columns))]
-
-print(vif_data.sort_values(by="VIF", ascending=False))
-
-```
-
-```{python}
-#| label: model validation for all pca take 2
-#| include: false
-
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import seaborn as sns
-
-plt.figure(figsize=(10, 6))
-sns.residplot(x=sm_model.fittedvalues, y=sm_model.resid, lowess=True, 
-              line_kws={'color': 'red', 'lw': 1})
-plt.title('Residuals vs Fitted (Checking Homoscedasticity)')
-plt.xlabel('Fitted Values (Predicted Price)')
-plt.ylabel('Residuals')
-plt.show()
-
-# 2. Q-Q Plot (Checking Normality)
-fig, ax = plt.subplots(figsize=(8, 6))
-sm.qqplot(sm_model.resid, line='45', fit=True, ax=ax)
-plt.title('Normal Q-Q Plot (Checking Residual Distribution)')
-plt.show()
-
-'''
-Taking the log of the cpi adjusted sales price made the data fit the asusmptions of the model. Hwoever, we can now see that a linear model is only capturing about half of the variation in y. Time to move on to a non-linear model
-'''
-
-```
-
-```{python}
-#| label: random forest on primary components
-#| include: false
-
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
-
-pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
-
-pc_cols = [f'PC{i}' for i in range(1, 21)]
-
-# 2. Create a temporary combined dataframe to ensure perfect row alignment
-temp_df = pcadata[pc_cols + ['CPI Adjusted Sold Price']].dropna()
-
-# 3. Separate them back out
-X = temp_df[pc_cols]
-y = temp_df['CPI Adjusted Sold Price']
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=2026)
-rf_model.fit(X_train, y_train)
-
-y_pred = rf_model.predict(X_test)
-
-print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
-print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
-
-importances = pd.Series(rf_model.feature_importances_, index=X.columns)
-importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
-
-```
-
-```{python}
-#| label: random forest model validation
-#| include: false
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-
-y_pred = rf_model.predict(X_test)
-residuals = y_test - y_pred
-
-fig, ax = plt.subplots(1, 2, figsize=(16, 6))
-
-# 2. Residual Plot with LOESS line
-# lowess=True handles the non-linear trend line automatically
-sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
-            lowess=True, 
-            scatter_kws={'alpha': 0.3}, 
-            line_kws={'color': 'red', 'lw': 2})
-
-ax[0].axhline(y=0, color='black', linestyle='--')
-ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
-ax[0].set_xlabel('Predicted Price')
-ax[0].set_ylabel('Residuals')
-
-# 3. QQ Plot
-sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
-ax[1].set_title('RF Residuals Q-Q Plot')
-
-plt.tight_layout()
-plt.show()
-
-```
-
-```{python}
-#| label: random forest on primary components take 2
-#| include: false
-
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
-
-pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
-
-pc_cols = [f'PC{i}' for i in range(1, 21)]
-
-# 2. Create a temporary combined dataframe to ensure perfect row alignment
-temp_df = pcadata[pc_cols + ['CPI Adjusted Sold Price']].dropna()
-
-# 3. Separate them back out
-X = temp_df[pc_cols]
-y = np.log(temp_df['CPI Adjusted Sold Price'])
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=2026)
-rf_model.fit(X_train, y_train)
-
-y_pred = rf_model.predict(X_test)
-
-print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
-print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
-
-importances = pd.Series(rf_model.feature_importances_, index=X.columns)
-importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
-```
-
-```{python}
-#| label: random forest model validation take 2
-#| include: false
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-
-y_pred = rf_model.predict(X_test)
-residuals = y_test - y_pred
-
-fig, ax = plt.subplots(1, 2, figsize=(16, 6))
-
-# 2. Residual Plot with LOESS line
-# lowess=True handles the non-linear trend line automatically
-sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
-            lowess=True, 
-            scatter_kws={'alpha': 0.3}, 
-            line_kws={'color': 'red', 'lw': 2})
-
-ax[0].axhline(y=0, color='black', linestyle='--')
-ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
-ax[0].set_xlabel('Predicted Price')
-ax[0].set_ylabel('Residuals')
-
-# 3. QQ Plot
-sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
-ax[1].set_title('RF Residuals Q-Q Plot')
-
-plt.tight_layout()
-plt.show()
-
-'''
-While taking the log took care of the fanning issue, there are still some heavy tails. Next attempt will be making adjustments to the max_depth and number of trees in the random forest.
-'''
-```
-
-```{python}
-#| label: optimized random forest
-#| include: false
-
-from sklearn.model_selection import RandomizedSearchCV
-import numpy as np
-
-valid_data = pcadata[pcadata['CPI Adjusted Sold Price'] > 0].copy()
-
-# 2. Create your target (Sqrt transform)
-valid_data['target'] = np.sqrt(valid_data['CPI Adjusted Sold Price'])
-
-# 3. Define X and y from the SAME dataframe
-pc_cols = [f'PC{i}' for i in range(1, 21)]
-X = valid_data[pc_cols]
-y = valid_data['target']
-
-# Now they are guaranteed to have the same number of rows
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-param_dist = {
-    'n_estimators': [100, 200, 500],           # Number of trees (more is usually better, but slower)
-    'max_depth': [10, 20, 30, None],          # How deep each tree goes (prevents overfitting)
-    'min_samples_split': [2, 5, 10],          # Min samples required to split a node
-    'min_samples_leaf': [1, 2, 4],            # Min samples required at a leaf node
-    'max_features': ['sqrt', 'log2', None]    # Number of features to consider at each split
-}
-
-rf_random = RandomizedSearchCV(
-    estimator=RandomForestRegressor(random_state=2026),
-    param_distributions=param_dist,
-    n_iter=20, 
-    cv=5, 
-    scoring='neg_mean_absolute_error', 
-    verbose=2, 
-    random_state=2026, 
-    n_jobs=-1 
+# Trended Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Trended",
+    scatter=False,
+    line_kws={
+        "color": "#3498db",
+        "label": f"Trended to {lien_date.date()} (Stabilized)",
+        "linewidth": 4,
+    },
+    lowess=False,
 )
 
-rf_random.fit(X_train, y_train)
+# The Splines
+for s in knot_dates:
+    plt.axvline(
+        mdates.date2num(s), color="black", linestyle="--", alpha=0.2, label="_nolegend_"
+    )
 
-print(f"Best Parameters: {rf_random.best_params_}")
-
-# 5. Use the best model for predictions
-best_rf = rf_random.best_estimator_
-y_pred_tuned = best_rf.predict(X_test)
-
-```
-
-```{python}
-#| label: random forest on primary components take 3
-#| include: false
-
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
-
-pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
-
-pc_cols = [f'PC{i}' for i in range(1, 21)]
-
-# 2. Create a temporary combined dataframe to ensure perfect row alignment
-temp_df = pcadata[pc_cols + ['CPI Adjusted Sold Price']].dropna()
-
-# 3. Separate them back out
-X = temp_df[pc_cols]
-y = np.log(temp_df['CPI Adjusted Sold Price'])
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
-
-rf_model = RandomForestRegressor(n_estimators=500, min_samples_split=2, min_samples_leaf=2, max_depth=None, random_state=2026)
-rf_model.fit(X_train, y_train)
-
-y_pred = rf_model.predict(X_test)
-
-print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
-print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
-
-importances = pd.Series(rf_model.feature_importances_, index=X.columns)
-importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
-
-```
-
-```{python}
-#| label: random forest model validation take 3
-#| include: false
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-
-y_pred = rf_model.predict(X_test)
-residuals = y_test - y_pred
-
-fig, ax = plt.subplots(1, 2, figsize=(16, 6))
-
-# 2. Residual Plot with LOESS line
-# lowess=True handles the non-linear trend line automatically
-sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
-            lowess=True, 
-            scatter_kws={'alpha': 0.3}, 
-            line_kws={'color': 'red', 'lw': 2})
-
-ax[0].axhline(y=0, color='black', linestyle='--')
-ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
-ax[0].set_xlabel('Predicted Price')
-ax[0].set_ylabel('Residuals')
-
-# 3. QQ Plot
-sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
-ax[1].set_title('RF Residuals Q-Q Plot')
+# Formatting for Revealjs
+ax = plt.gca()
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+plt.ylim(0, y_limit)
+plt.title("Residential Housing Market Stabilization", fontsize=22, pad=20)
+plt.ylabel("Price per Square Foot ($)", fontsize=14)
+plt.xlabel("Sale Date", fontsize=14)
+plt.legend(
+    loc="upper left", fontsize=13, frameon=True, facecolor="white", framealpha=0.9
+)
+plt.grid(axis="y", alpha=0.15)
 
 plt.tight_layout()
 plt.show()
-
-'''
-While 90% variation is explained with this model, the pca may have smoothed out some of the patterns that the random forest model could have picked up on, but isn't because its smoothed out. Now to try adding the raw data back in along side the pca, as random forest handles the multicollinearity.
-'''
 ```
 
-```{python}
-#| label: random forest on primary components take 4
-#| include: false
+## Model Selection & Strategy
+We discussed three distinct architectures to determine which could best model the Iron County real estate.
 
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
+1. Elastic Net: A hybrid of Lasso and Ridge regression. It handles it handles overlapping variables by penalizing redundant variables. It is excellent for transparency, but struggles with the "curvy" non-linear nature of modern market shifts.
 
-pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+2. Random Forest Trains 100+ independent decision trees on random subsets of data and averages their "votes." It captures feature fnteractions. It understands that a "3rd Garage Bay" adds more value to a luxury ranch than to a high-density efficiency unit.
 
-pc_cols = [f'PC{i}' for i in range(1, 21)]
+3. Gradient Boosting Trees are built sequentially. Each new tree specifically targets the "errors" of the previous one to minimize the Mean Absolute Error. Gradient Boosting is very precise. It pushes the $R^2$ to its mathematical limit by refining the model's focus on outliers.
 
-combined_df = pd.concat([pcadata['CPI Adjusted Sold Price'], pcadata_num, pcadata[pc_cols]], axis=1)
+# The Application
 
-combined_df = combined_df.dropna()
+## Vision & Architecture {.center}
 
-# 3. Separate them back out
-X = combined_df.drop(columns=['CPI Adjusted Sold Price'])
-y = np.log(combined_df['CPI Adjusted Sold Price'])
+Deployment direction discussed in our most recent stakeholder meeting:
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+-   Beta Version: Scoped to the Commissioner's Office only, preserving data confidentiality without requiring public-facing infrastructure.
+-   Future Version: The office may explore opening access to the public, which would require dedicated data centers and formal security protocols to protect sensitive parcel data.
 
-rf_model = RandomForestRegressor(n_estimators=500, min_samples_split=2, min_samples_leaf=2, max_depth=None, random_state=2026)
-rf_model.fit(X_train, y_train)
+## Next Steps
 
-y_pred = rf_model.predict(X_test)
+- **Phase 2:** Complete model development and validation (target: R² ≥ 0.90)
+- **Phase 3:** Complete UI development for assessor-facing application
+- **Delivery:** Hand off to the Commissioner's Office for beta testing
 
-print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
-print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
-
-importances = pd.Series(rf_model.feature_importances_, index=X.columns)
-importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
-
-```
-
-```{python}
-#| label: random forest model validation take 4
-#| include: false
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-
-y_pred = rf_model.predict(X_test)
-residuals = y_test - y_pred
-
-fig, ax = plt.subplots(1, 2, figsize=(16, 6))
-
-# 2. Residual Plot with LOESS line
-# lowess=True handles the non-linear trend line automatically
-sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
-            lowess=True, 
-            scatter_kws={'alpha': 0.3}, 
-            line_kws={'color': 'red', 'lw': 2})
-
-ax[0].axhline(y=0, color='black', linestyle='--')
-ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
-ax[0].set_xlabel('Predicted Price')
-ax[0].set_ylabel('Residuals')
-
-# 3. QQ Plot
-sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
-ax[1].set_title('RF Residuals Q-Q Plot')
-
-plt.tight_layout()
-plt.show()
-
-```
-
-```{python}
-#| label: rf4 outliers
-#| include: false
-
-residuals = y_test - y_pred
-
-std_residuals = (residuals - residuals.mean()) / residuals.std()
-
-extreme_outlier_mask = std_residuals > 5
-
-extreme_outliers = X_test[extreme_outlier_mask].copy()
-
-extreme_outliers['Actual_Log_Price'] = y_test[extreme_outlier_mask]
-extreme_outliers['Predicted_Log_Price'] = y_pred[extreme_outlier_mask]
-extreme_outliers['Std_Residual'] = std_residuals[extreme_outlier_mask]
-
-print(f"Found {len(extreme_outliers)} entries with Sample Quantiles > 5")
-print(extreme_outliers.head())
-```
-
-```{python}
-#| label: random forest model validation take 5
-#| include: false
-
-# 1. Filter out the extreme outliers from your test sets
-# 1. Identify and remove outliers from the TRAINING set (where the model learns)
-y_train_pred_initial = rf_model.predict(X_train) 
-train_residuals = y_train - y_train_pred_initial
-std_train_residuals = (train_residuals - train_residuals.mean()) / train_residuals.std()
-
-# Create mask for training (keeping only those <= 5 std devs)
-train_clean_mask = std_train_residuals.abs() <= 5
-X_train_clean = X_train[train_clean_mask]
-y_train_clean = y_train[train_clean_mask]
-
-# 2. Use your existing mask for the TEST set
-X_test_clean = X_test[~extreme_outlier_mask]
-y_test_clean = y_test[~extreme_outlier_mask]
-
-# 3. RE-FIT the model on the CLEAN training data
-rf_model = RandomForestRegressor(n_estimators=500, min_samples_split=2, min_samples_leaf=2, max_depth=None, random_state=2026)
-rf_model.fit(X_train_clean, y_train_clean)
-
-# 4. Predict on the CLEAN test set
-y_pred_clean = rf_model.predict(X_test_clean)
-
-# 5. Report new metrics
-print(f"New R^2 Score: {r2_score(y_test_clean, y_pred_clean):.4f}")
-print(f"New Mean Absolute Error: ${mean_absolute_error(y_test_clean, y_pred_clean):,.2f}")
-
-# 6. Plot updated feature importance
-importances = pd.Series(rf_model.feature_importances_, index=X.columns)
-importances.sort_values().plot(kind='barh', title='Importance of Principal Components (Cleaned Data)')
-
-```
-```{python}
-#| label: random forest model validation take 5
-#| include: false
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-
-y_pred = rf_model.predict(X_test)
-residuals = y_test - y_pred
-
-fig, ax = plt.subplots(1, 2, figsize=(16, 6))
-
-# 2. Residual Plot with LOESS line
-# lowess=True handles the non-linear trend line automatically
-sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
-            lowess=True, 
-            scatter_kws={'alpha': 0.3}, 
-            line_kws={'color': 'red', 'lw': 2})
-
-ax[0].axhline(y=0, color='black', linestyle='--')
-ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
-ax[0].set_xlabel('Predicted Price')
-ax[0].set_ylabel('Residuals')
-
-# 3. QQ Plot
-sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
-ax[1].set_title('RF Residuals Q-Q Plot')
-
-plt.tight_layout()
-plt.show()
-
-```
+# Questions?
