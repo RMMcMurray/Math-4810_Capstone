@@ -560,6 +560,34 @@ print(vif_data.sort_values(by="VIF", ascending=False))
 ```
 This is the Physical Property Effect. Approximately 30% of the variance in price is explained by the weighted features of the home. 
 
+```{python}
+#| label: pca model validation
+
+influence = sm_model.get_influence()
+student_resid = influence.resid_studentized_external
+
+# 2. Create the plots
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+# Plot 1: Studentized Residual vs. Fitted Values
+ax1.scatter(model.fittedvalues, student_resid, alpha=0.7, edgecolors='k')
+ax1.axhline(y=0, color='red', linestyle='--')
+ax1.axhline(y=3, color='grey', linestyle=':')
+ax1.axhline(y=-3, color='grey', linestyle=':')
+ax1.set_xlabel('Fitted Values')
+ax1.set_ylabel('Studentized Residuals')
+ax1.set_title('Studentized Residual Plot')
+
+# Plot 2: Normal Q-Q Plot of Studentized Residuals
+sm.qqplot(student_resid, line='45', ax=ax2)
+ax2.set_title('Normal Q-Q Plot')
+
+plt.tight_layout()
+plt.show()
+
+```
+
+
 ## Pre-PCA Regression
 
 ```{python}
@@ -586,3 +614,4 @@ print(vif_data.sort_values(by="VIF", ascending=False))
 
 ```
 The reason the PCA's were used initially are because the PC's are orthgonal to eachother, which means there is no multicollinearity between the components. In a model using the same variables as what was used to compute the PC's, we do see a higher $R^2$ value, but that is due to the overfitting of the model which is a result of the multicollinearity evidenced by the VIF output. 
+

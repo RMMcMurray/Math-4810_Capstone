@@ -1,20 +1,20 @@
 <!DOCTYPE html>
 <html lang="en"><head>
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="PCA_umap_files/libs/clipboard/clipboard.min.js"></script>
-<script src="PCA_umap_files/libs/quarto-html/tabby.min.js"></script>
-<script src="PCA_umap_files/libs/quarto-html/popper.min.js"></script>
-<script src="PCA_umap_files/libs/quarto-html/tippy.umd.min.js"></script>
-<link href="PCA_umap_files/libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="PCA_umap_files/libs/quarto-html/light-border.css" rel="stylesheet">
-<link href="PCA_umap_files/libs/quarto-html/quarto-syntax-highlighting-dark-4d9afe2b8d18ee9fa5d0d57b5ed4214d.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="deliverable_slides_files/libs/clipboard/clipboard.min.js"></script>
+<script src="deliverable_slides_files/libs/quarto-html/tabby.min.js"></script>
+<script src="deliverable_slides_files/libs/quarto-html/popper.min.js"></script>
+<script src="deliverable_slides_files/libs/quarto-html/tippy.umd.min.js"></script>
+<link href="deliverable_slides_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="deliverable_slides_files/libs/quarto-html/light-border.css" rel="stylesheet">
+<link href="deliverable_slides_files/libs/quarto-html/quarto-syntax-highlighting-dark-4d9afe2b8d18ee9fa5d0d57b5ed4214d.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
   <meta name="generator" content="quarto-1.8.27">
 
-  <title>Data Science Capstone</title>
+  <title>Data Science Capstone: Commissioner’s Office House Price Analysis</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
-  <link rel="stylesheet" href="PCA_umap_files/libs/revealjs/dist/reset.css">
-  <link rel="stylesheet" href="PCA_umap_files/libs/revealjs/dist/reveal.css">
+  <link rel="stylesheet" href="deliverable_slides_files/libs/revealjs/dist/reset.css">
+  <link rel="stylesheet" href="deliverable_slides_files/libs/revealjs/dist/reveal.css">
   <style>
     code{white-space: pre-wrap;}
     span.smallcaps{font-variant: small-caps;}
@@ -28,11 +28,11 @@
       vertical-align: middle;
     }
   </style>
-  <link rel="stylesheet" href="PCA_umap_files/libs/revealjs/dist/theme/quarto-c2870a8b1a64cb49d1e11a39b9ea3b27.css">
-  <link href="PCA_umap_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
-  <link href="PCA_umap_files/libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
-  <link href="PCA_umap_files/libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
-  <link href="PCA_umap_files/libs/revealjs/plugin/quarto-support/footer.css" rel="stylesheet">
+  <link rel="stylesheet" href="deliverable_slides_files/libs/revealjs/dist/theme/quarto-c2870a8b1a64cb49d1e11a39b9ea3b27.css">
+  <link href="deliverable_slides_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
+  <link href="deliverable_slides_files/libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
+  <link href="deliverable_slides_files/libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
+  <link href="deliverable_slides_files/libs/revealjs/plugin/quarto-support/footer.css" rel="stylesheet">
   <style type="text/css">
     .reveal div.sourceCode {
       margin: 0;
@@ -130,137 +130,156 @@
     <div class="slides">
 
 <section id="title-slide" class="quarto-title-block center">
-  <h1 class="title">Data Science Capstone</h1>
+  <h1 class="title">Data Science Capstone: Commissioner’s Office House Price Analysis</h1>
 
 <div class="quarto-title-authors">
 </div>
 
 </section>
-<section>
-<section id="the-vision" class="title-slide slide level1 center">
-<h1>The Vision:</h1>
-<p>To build a predictive application that enables the Commissioner’s Office to estimate property values and, more importantly, explain why those prices are shifting.</p>
-</section>
-<section id="strategy" class="slide level2 center">
-<h2>Strategy</h2>
+<section id="the-problem" class="slide level2">
+<h2>The Problem</h2>
 <ul>
-<li>CPI Adjustment: Normalize historical sales to today’s dollar.</li>
-<li>Market Segmentation: Use “Market Type” (Single-Family vs.&nbsp;Multi-Family) as interaction terms—recognizing that an extra bedroom in a condo adds different value than an extra bedroom on a ranch.</li>
-<li>The Application: An interactive application that will output pricing predictions and add transparency in the valuation process.</li>
+<li>Property values are only captured at the <strong>point of sale</strong></li>
+<li>Between sales, assessors must estimate value manually — no data-driven basis</li>
+<li>Estimates are inconsistently applied and <strong>difficult to defend in court</strong></li>
+<li>The result: property tax assessments that are arbitrary and legally vulnerable</li>
 </ul>
-</section></section>
-<section>
-<section id="methodology" class="title-slide slide level1 center">
-<h1>Methodology</h1>
-
 </section>
-<section id="phase-1" class="slide level2 center">
-<h2>Phase 1:</h2>
-<p>Feature Drivers: Identify the drivers of what makes properties different. These drivers are found in my PCA. Drivers that have been found will be discussed later on.</p>
+<section id="our-approach" class="slide level2">
+<h2>Our Approach</h2>
+<ul>
+<li><strong>Phase 1 — Understanding the Market:</strong> Identify what drives property value and uncover natural sub-markets in the data</li>
+<li><strong>Phase 2 — Building the Model:</strong> Predict property value from numerical and non-numerical features, adjusted for market trends</li>
+<li><strong>Phase 3 — The Application:</strong> A tool for assessors to input property features and receive a defensible, data-backed value estimate</li>
+</ul>
 </section>
-<section id="phase-2" class="slide level2 center">
-<h2>Phase 2:</h2>
-<p>Price Sub-Markets: Identify the sub-markets within housing markets (housing markets: single family, multi-family, etc.) These sub-markets are found in Ryan and Lucca’s UMAPS.</p>
-</section>
-<section id="phase-3" class="slide level2 center">
-<h2>Phase 3:</h2>
-<p>Price Prediction: Utilize findings from feature extraction and sub-market classifications to then predict housing prices, adjusting for CPI in the process. The goal of these models is to capture 90% or more of the variation in price. These predictions are currently being curated!</p>
-</section></section>
 <section>
 <section id="current-insights-phase-1" class="title-slide slide level1 center">
 <h1>Current Insights (Phase 1)</h1>
 
 </section>
-<section id="insights-the-standard-vs.-the-luxury" class="slide level2 center">
-<h2>Insights: “The Standard vs.&nbsp;The Luxury”</h2>
-<p>Finding: Only 30% of property variation is driven by “Standard Features” (Bed/Bath/Sqft).</p>
-<p>The “So What?”: 70% of what makes properties in Iron County unique comes from “Luxury” or “Nuance” features (sheds, pools, etc.). Interesting feature fact: Half Baths act like a “luxury” feature in the data.</p>
-<p>Actionable Step: Our model cannot just look at the basics; we must include these “luxury” indicators to reach our 90% accuracy goal.</p>
-</section>
-<section id="pca-scree-plot" class="slide level2 center">
-<h2>PCA Scree Plot</h2>
-<p>::: {#cell-Scree Plot to optimize number of components .cell cache=‘true’ execution_count=13}</p>
-<div class="cell-output cell-output-display">
-<div>
-<figure>
-<p><img data-src="PCA_umap_files/figure-revealjs/scree-plot-to-optimize-number-of-components-output-1.png" id="scree-plot-to-optimize-number-of-components" width="663" height="523"></p>
-</figure>
-</div>
-</div>
-<p>:::</p>
-</section>
-<section id="pca-loading-matrix" class="slide level2 center">
-<h2>PCA Loading Matrix</h2>
+<section id="the-standard-vs.-the-luxury" class="slide level2 center">
+<h2>The Standard vs.&nbsp;The Luxury</h2>
 <div class="columns">
-<div class="column" style="width:60%;">
-<p>::: {#cell-Loading Matrix .cell execution_count=15}</p>
+<div class="column" style="width:40%;">
+<div id="cell-scree-plot-cumulative" class="cell" data-cache="true" data-message="false" data-plt.figure="true" data-execution_count="4">
 <div class="cell-output cell-output-display">
 <div>
 <figure>
-<p><img data-src="PCA_umap_files/figure-revealjs/loading-matrix-output-1.png" id="loading-matrix" width="1083" height="671"></p>
+<p><img data-src="deliverable_slides_files/figure-revealjs/scree-plot-cumulative-output-1.png" id="scree-plot-cumulative" width="663" height="523"></p>
 </figure>
+</div>
+</div>
+</div>
+</div><div class="column" style="width:60%;">
+<div id="cell-Loading_Matrix" class="cell" data-message="false" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="deliverable_slides_files/figure-revealjs/loading_matrix-output-1.png" id="loading_matrix" width="949" height="523"></p>
+</figure>
+</div>
 </div>
 </div>
 </div></div>
-<div class="column" style="width:40%;">
-<p>PCA Components: - PC1: contains standard variables.<br>
-- PC2: focus on recreational outdoor features (ex pools, rec courts, etc)<br>
-- PC3: focus on utility outdoor features (ex sheds, barns, etc)<br>
-- PC4: focus on aggrecultural vs recreational utility features (carport v barn)<br>
-- PC5: focus on guest features vs personal features (guest house v gazebo)<br>
-- PC6: focus on niche<br>
-- PC7: focus on niche<br>
-- PC8: focus on niche<br>
-- PC9: focus on external vehical storage vs general utility (detached garage v shed)<br>
-- PC10: focus on attached vehical storage vs general utility (carport v shed)<br>
-- PC11: focus on basement space and completion over vehical storage<br>
-- PC12: focus on the land<br>
-- PC13: focus on half-bath<br>
-</p>
-</div></section></section>
-<section>
-<section id="road-map-next-steps" class="title-slide slide level1 center">
-<h1>Road Map &amp; Next Steps</h1>
-
 </section>
-<section id="cpi-adjustments" class="slide level2 center">
-<h2>CPI Adjustments</h2>
-<p>Reasoning: Due to inflation, the value of a dollar today is not the same as it was a year ago or will be in a year. To ensure that all of the dollar amounts we are predicting equate to the same value, we need to adjust for these market fluxuations.</p>
-<p>Role of the Students: Our role is to prepare the data for the adjustments by consolidating insights about markets and sub-markets in with a master dataset for the Commissioners office to work with.</p>
-<p>Role of the Commissioner Office: The role of the commissioner office is to conduct the CPI adjustments on the master dataset and return it back to the students for model integration.</p>
-</section>
-<section id="modeling" class="slide level2 center">
-<h2>Modeling</h2>
-<p>Modeling: As we move into the modeling, we want to combine insights from the unsupervised modeling into our supervised modeling process. As mentioned previously, we will want to add interaction variables for markets and sub-markets. Another interaction variable that may be beneficial is location, as rural areas may be priced differently compared to urban areas. As previously mentioned, the goal of the modeling is to account for 90% or more of the variation in price.</p>
-<p>Validation: As we model, we need to validate the models so that the predictions can be trusted.</p>
-</section>
-<section id="application" class="slide level2 center">
-<h2>Application</h2>
-<p>Deployment: Once a model is chosen, it will then be implemented into a user-friendly platform for the Commissioners Office, such that predictions and drivers are identified.</p>
-
+<section id="sub-markets" class="slide level2 center">
+<h2>Sub-Markets</h2>
+<div class="quarto-layout-panel" data-layout-ncol="2">
+<div class="quarto-layout-row">
+<div id="cell-umap-viz-execution" class="cell quarto-layout-cell" data-execution_count="8" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="deliverable_slides_files/figure-revealjs/umap-viz-execution-output-1.png" id="umap-viz-execution" width="949" height="566"></p>
+</figure>
+</div>
+</div>
+</div>
+<div id="cell-Decile" class="cell quarto-layout-cell" data-execution_count="9" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="deliverable_slides_files/figure-revealjs/decile-output-1.png" id="decile" width="890" height="566"></p>
+</figure>
+</div>
+</div>
+</div>
+</div>
+</div>
 </section></section>
+<section>
+<section id="current-insights-phase-2" class="title-slide slide level1 center">
+<h1>Current Insights (Phase 2)</h1>
+
+</section>
+<section id="prices-after-stabalization" class="slide level2">
+<h2>Prices After Stabalization</h2>
+<div id="cell-trend_visualization_refined" class="cell" data-execution_count="11">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="deliverable_slides_files/figure-revealjs/trend_visualization_refined-output-1.png" id="trend_visualization_refined" width="1526" height="758"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="model-selection-strategy" class="slide level2 scrollable">
+<h2>Model Selection &amp; Strategy</h2>
+<p>We discussed three distinct architectures to determine which could best model the Iron County real estate.</p>
+<ol type="1">
+<li><p>Elastic Net: A hybrid of Lasso and Ridge regression. It handles it handles overlapping variables by penalizing redundant variables. It is excellent for transparency, but struggles with the “curvy” non-linear nature of modern market shifts.</p></li>
+<li><p>Random Forest Trains 100+ independent decision trees on random subsets of data and averages their “votes.” It captures feature fnteractions. It understands that a “3rd Garage Bay” adds more value to a luxury ranch than to a high-density efficiency unit.</p></li>
+<li><p>Gradient Boosting Trees are built sequentially. Each new tree specifically targets the “errors” of the previous one to minimize the Mean Absolute Error. Gradient Boosting is very precise. It pushes the <span class="math inline">\(R^2\)</span> to its mathematical limit by refining the model’s focus on outliers.</p></li>
+</ol>
+</section></section>
+<section>
+<section id="the-application" class="title-slide slide level1 center">
+<h1>The Application</h1>
+
+</section>
+<section id="vision-architecture" class="slide level2 center">
+<h2>Vision &amp; Architecture</h2>
+<p>Deployment direction discussed in our most recent stakeholder meeting:</p>
+<ul>
+<li>Beta Version: Scoped to the Commissioner’s Office only, preserving data confidentiality without requiring public-facing infrastructure.</li>
+<li>Future Version: The office may explore opening access to the public, which would require dedicated data centers and formal security protocols to protect sensitive parcel data.</li>
+</ul>
+</section>
+<section id="next-steps" class="slide level2">
+<h2>Next Steps</h2>
+<ul>
+<li><strong>Phase 2:</strong> Complete model development and validation (target: R² ≥ 0.90)</li>
+<li><strong>Phase 3:</strong> Complete UI development for assessor-facing application</li>
+<li><strong>Delivery:</strong> Hand off to the Commissioner’s Office for beta testing</li>
+</ul>
+</section></section>
+<section id="questions" class="title-slide slide level1 center">
+<h1>Questions?</h1>
+
+</section>
     </div>
   <div class="quarto-auto-generated-content" style="display: none;">
-<p><img src="iron_county_logo.png" class="slide-logo"></p>
 <div class="footer footer-default">
-<p>Commissioner’s Office - Housing Project</p>
+<p>Commissioner’s Office - House Pricing Project</p>
 </div>
 </div></div>
 
   <script>window.backupDefine = window.define; window.define = undefined;</script>
-  <script src="PCA_umap_files/libs/revealjs/dist/reveal.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/dist/reveal.js"></script>
   <!-- reveal.js plugins -->
-  <script src="PCA_umap_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/pdf-export/pdfexport.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/reveal-menu/menu.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/reveal-menu/quarto-menu.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/quarto-support/support.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/pdf-export/pdfexport.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/reveal-menu/menu.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/reveal-menu/quarto-menu.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/quarto-support/support.js"></script>
   
 
-  <script src="PCA_umap_files/libs/revealjs/plugin/notes/notes.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/search/search.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/zoom/zoom.js"></script>
-  <script src="PCA_umap_files/libs/revealjs/plugin/math/math.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/notes/notes.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/search/search.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/zoom/zoom.js"></script>
+  <script src="deliverable_slides_files/libs/revealjs/plugin/math/math.js"></script>
   <script>window.define = window.backupDefine; window.backupDefine = undefined;</script>
 
   <script>

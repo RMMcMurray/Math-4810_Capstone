@@ -347,20 +347,20 @@ plt.show()
 ___________________________
 
 Key Findings: 
-PCA Components: 
-- PC1: contains standard variables. \
-- PC2: focus on recreational outdoor features (ex pools, rec courts, etc)\
-- PC3: focus on utility outdoor features (ex sheds, barns, etc)\
-- PC4: focus on aggrecultural vs recreational utility features (carport v barn)\
-- PC5: focus on guest features vs personal features (guest house v gazebo)\
-- PC6: focus on niche\
-- PC7: focus on niche\
-- PC8: focus on niche\
-- PC9: focus on external vehical storage vs general utility (detached garage v shed)\
-- PC10: focus on attached vehical storage vs general utility (carport v shed)\
-- PC11: focus on basement space and completion over vehical storage\
-- PC12: focus on the land\
-- PC13: focus on half-bath\
+- PCA Components: 
+    - PC1: contains standard variables. 
+    - PC2: focus on recreational outdoor features (ex pools, rec courts, etc)
+    - PC3: focus on utility outdoor features (ex sheds, barns, etc)
+    - PC4: focus on aggrecultural vs recreational utility features (carport v barn)
+    - PC5: focus on guest features vs personal features (guest house v gazebo)
+    - PC6: 
+    - PC7: 
+    - PC8: 
+    - PC9: focus on external vehical storage vs general utility (detached garage v shed)
+    - PC10: focus on attached vehical storage vs general utility (carport v shed)
+    - PC11: focus on basement space and completion over vehical storage
+    - PC12: focus on the land
+    - PC13: focus on half-bath
 
 Essentially, the standard features are evaluated in the first PC. All subsequent components look at the different combonations of features for various focuses, such as recreation, utility, etc. 
 
