@@ -1,0 +1,1253 @@
+---
+title: Data Science Capstone
+format: 
+  revealjs:
+    theme: league 
+    transition: slide
+    scrollable: true
+    logo: iron_county_logo.png 
+    footer: "Commissioner's Office - Housing Project"
+urlcolor: blue
+engine: jupyter3
+execute: 
+  eval: true
+  echo: false
+  cache: true
+editor_options: 
+  chunk_output_type: console
+---
+
+# The Vision:
+
+To build a predictive application that enables the Commissioner’s Office to estimate property values and, more importantly, explain why those prices are shifting.
+
+## Strategy {.center}
+
+-   CPI Adjustment: Normalize historical sales to today's dollar.
+-   Market Segmentation: Use "Market Type" (Single-Family vs. Multi-Family) as interaction terms—recognizing that an extra bedroom in a condo adds different value than an extra bedroom on a ranch.
+-   The Application: An interactive application that will output pricing predictions and add transparency in the valuation process.
+
+# Methodology
+
+## Phase 1: {.center}
+
+Feature Drivers: Identify the drivers of what makes properties different. 
+These drivers are found in my PCA. Drivers that have been found will be discussed later on.
+
+## Phase 2: {.center}
+
+Price Sub-Markets: Identify the sub-markets within housing markets (housing markets: single family, multi-family, etc.) These sub-markets are found in Ryan and Lucca's UMAPS.
+
+## Phase 3: {.center}
+
+Price Prediction: Utilize findings from feature extraction and sub-market classifications to then predict housing prices, adjusting for CPI in the process. The goal of these models is to capture 90% or more of the variation in price. These predictions are currently being curated!
+
+```{python}
+#| label: Initial Imports
+#| include: false
+
+import pandas as pd
+import numpy as np
+from pandas import read_csv
+from pandas.core.common import random_state
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import seaborn as sns
+import sklearn
+import umap
+from scipy import stats
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import QuantileTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import PowerTransformer
+import hdbscan
+from hdbscan import validity
+import reverse_geocoder as rg
+import cpi
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+
+```
+
+```{python}
+#| label: function creation
+#| include: false
+
+def normalize(df):
+    """
+    Returns two dataframes:
+    1. df_quantile: Everything forced to normal via Quantile Transformation.
+    2. df_comp: Each column transformed by the 'winner' of YJ vs. Quantile.
+    """
+    df_quantile = pd.DataFrame(index=df.index)
+    df_comp = pd.DataFrame(index=df.index)
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    
+    for col in numeric_cols:
+        data_raw = df[col].values.reshape(-1, 1)
+
+        # Yeo-Johnson
+        yj_data, lmbda = stats.yeojohnson(df[col])
+        _, yj_p = stats.normaltest(yj_data)
+        
+        # Normality test for the Quantile data
+        qt_engine = QuantileTransformer(output_distribution='normal', 
+                                        n_quantiles=min(len(df), 1000), 
+                                        random_state=42)
+        qt_data = qt_engine.fit_transform(data_raw).flatten()
+        _, qt_p = stats.normaltest(qt_data)
+        
+        if yj_p >= qt_p:
+            # Determine suffix for YJ winner
+            if -0.1 <= lmbda <= 0.1: suffix = "log"
+            elif 0.4 <= lmbda <= 0.6: suffix = "sqrt"
+            elif 0.9 <= lmbda <= 1.1: suffix = "linear"
+            elif lmbda < 0: suffix = "inv"
+            else: suffix = "pow"
+            df_comp[f"{col}_{suffix}"] = yj_data
+        else:
+            df_comp[f"{col}_quant"] = qt_data
+            
+    print(f"Experiments complete for {len(numeric_cols)} variables.")
+    return df_comp
+
+```
+
+```{python}
+#| label: Read in Parcel Export Sheet 2
+#| include: false
+
+parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
+parcel_export.head()
+parcel_export.shape # (53277, 53)
+parcel_export.info()
+
+```
+
+```{python}
+#| label: Non-numeric columns
+#| include: false
+
+non_numeric_cols = parcel_export.select_dtypes(exclude=[np.number]).columns.tolist()
+parcel_export[non_numeric_cols].shape # (53277, 12)
+parcel_export[non_numeric_cols].info()
+parcel_export[non_numeric_cols].columns
+
+```
+
+```{python}
+#| label: Numeric columns
+#| include: false
+
+numeric_cols = parcel_export.select_dtypes(include=[np.number]).columns.tolist() 
+parcel_export[numeric_cols].shape # (53277, 41)
+parcel_export[numeric_cols].info() 
+parcel_export[numeric_cols].columns
+
+```
+
+```{python}
+#| label: Numeric Column Adjustment
+#| include: false
+
+cols_to_move = ['TaxYear', 'ImpOnly', 'PropType ', 'Jurisdiction', 'SpecificPropType', 'Lat', 'Lng', 'ReviewedDate', 'ImpCode', 'Res Imp Count']
+non_numeric_cols = list(set(non_numeric_cols) | set(cols_to_move))
+numeric_cols = [c for c in parcel_export.columns if c not in non_numeric_cols]
+
+parcel_export[numeric_cols].shape # (53277, 31)
+
+```
+
+```{python}
+#| label: Fill in NAs for numeric columns with 0
+#| include: false
+
+parcel_export[numeric_cols] = parcel_export[numeric_cols].fillna(0)
+
+```
+
+```{python}
+#| label: Filter Parcel Export for PCA (only numeric columns)
+#| include: false
+
+numeric_parcel_data = parcel_export[numeric_cols]
+
+numeric_parcel_data.shape # (53277, 24)
+numeric_parcel_data.info()
+
+```
+
+```{python}
+#| label: Perform Transformations
+#| include: false
+
+df_competition = normalize(numeric_parcel_data)
+df_competition.columns
+
+```
+
+```{python}
+#| label: Scaling the data for PCA
+#| include: false
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df_competition)
+
+```
+
+```{python}
+#| label: PCA and Scree Plot
+#| include: false
+
+pca_full = PCA(n_components=None)
+pca_full.fit(X_scaled)
+
+```
+
+# Current Insights (Phase 1)
+
+## Insights: "The Standard vs. The Luxury" {.center}
+
+Finding: Only 30% of property variation is driven by "Standard Features" (Bed/Bath/Sqft).
+
+The "So What?": 70% of what makes properties in Iron County unique comes from "Luxury" or "Nuance" features (sheds, pools, etc.). Interesting feature fact: Half Baths act like a "luxury" feature in the data.
+
+Actionable Step: Our model cannot just look at the basics; we must include these "luxury" indicators to reach our 90% accuracy goal.
+
+## PCA Scree Plot  {.center}
+
+```{python}
+#| label: Scree Plot to optimize number of components
+#| cache: true
+#| fig-width: 8
+#| fig-height: 6
+
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(pca_full.explained_variance_ratio_) + 1), 
+         pca_full.explained_variance_ratio_.cumsum(), 
+         marker='o', linestyle='--')
+plt.title('Scree Plot (Cumulative Variance)')
+plt.xlabel('Number of Components')
+plt.ylabel('Cumulative Explained Variance')
+plt.grid()
+plt.show()
+
+```
+
+```{python}
+#| label: PCA with 13 components
+#| include: false
+
+pca = PCA(n_components=13)
+principal_components = pca.fit_transform(X_scaled)
+
+pca_df = pd.DataFrame(data=principal_components, columns=[
+    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13'])
+
+pca.explained_variance_ratio_.sum()
+
+```
+
+## PCA Loading Matrix  {.center}
+:::: {.columns}
+
+::: {.column width="60%"}
+```{python}
+#| label: Loading Matrix
+#| ig-width: 8
+#| fig-height: 6
+
+loadings = pd.DataFrame(
+    pca.components_.T, 
+    columns=[f'PC{i+1}' for i in range(pca.n_components_)], 
+    index=df_competition.columns
+)
+
+plt.figure(figsize=(12, 8))
+sns.heatmap(loadings, annot=True, cmap='RdBu', center=0)
+
+plt.title('Feature Loadings: Correlation between Original Variables and PCs')
+plt.xlabel('Principal Components')
+plt.ylabel('Original Features')
+plt.show()
+
+```
+:::
+::: {.column width="40%"} 
+PCA Components: - PC1: contains standard variables.\
+- PC2: focus on recreational outdoor features (ex pools, rec courts, etc)\
+- PC3: focus on utility outdoor features (ex sheds, barns, etc)\
+- PC4: focus on aggrecultural vs recreational utility features (carport v barn)\
+- PC5: focus on guest features vs personal features (guest house v gazebo)\
+- PC6: focus on niche\
+- PC7: focus on niche\
+- PC8: focus on niche\
+- PC9: focus on external vehical storage vs general utility (detached garage v shed)\
+- PC10: focus on attached vehical storage vs general utility (carport v shed)\
+- PC11: focus on basement space and completion over vehical storage\
+- PC12: focus on the land\
+- PC13: focus on half-bath\
+::::
+```{python}
+#| label: umap settings
+#| include: false
+
+reducer = umap.UMAP(
+    n_neighbors=50, 
+    min_dist=0.01, 
+    random_state=42
+)
+
+```
+
+```{python}
+#| label: UMAP
+#| include: false
+
+umap_embeddings = reducer.fit_transform(pca_df)
+
+```
+
+```{python}
+#| label: identify number of clusters
+#| include: false
+
+inertia = []
+k_range = range(1, 11) 
+
+for k in k_range:
+    kmeans_test = KMeans(n_clusters=k, random_state=42, n_init="auto")
+    kmeans_test.fit(pca_df)
+    inertia.append(kmeans_test.inertia_)
+
+plt.figure(figsize=(8, 4))
+plt.plot(k_range, inertia, marker='o', linestyle='--')
+plt.title('Elbow Method to Identify Optimal Clusters')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Inertia (Within-Cluster Sum of Squares)')
+plt.xticks(k_range)
+plt.grid(True)
+plt.show()
+
+```
+
+```{python}
+#| label: final clustering
+#| include: false
+
+optimal_k = 13
+
+final_model = KMeans(n_clusters=optimal_k, random_state=42, n_init="auto")
+labels = final_model.fit_predict(umap_embeddings)
+
+plt.figure(figsize=(10, 7))
+plt.scatter(umap_embeddings[:, 0], umap_embeddings[:, 1], c=labels, cmap='viridis', s=5)
+plt.colorbar(label='Cluster Label')
+plt.title(f"UMAP Projection with {optimal_k} K-Means Clusters")
+plt.show()
+
+```
+
+```{python}
+#| label: HDBSCAN Clustering
+#| include: false
+
+for i in range(100,600,100):
+    print(f"HDBSCAN with min_cluster_size = {i}")
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=i, gen_min_span_tree=True)
+    cluster_labels = clusterer.fit_predict(umap_embeddings)
+
+    n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+
+    score = validity.validity_index(umap_embeddings.astype('double'), cluster_labels)
+    print(f"DBCV Score: {score:.3f}")
+
+    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
+    plt.figure(figsize=(10, 8))
+    plt.scatter(
+        umap_embeddings[:, 0], 
+        umap_embeddings[:, 1], 
+        c=cluster_labels,      
+        cmap='Spectral', 
+        s=5)
+    plt.title('Housing Clusters via HDBSCAN (Organic Shapes)')
+    plt.colorbar(label='Cluster Label')
+    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
+    plt.show()
+
+```
+
+```{python}
+#| label: Cluster Profiling
+#| include: false
+
+numeric_parcel_data['Cluster_ID'] = cluster_labels
+
+cluster_profile = numeric_parcel_data.groupby('Cluster_ID').mean()
+
+print(cluster_profile.T)
+
+```
+
+```{python}
+#| label: PCA Clustering on UMAP
+#| include: false
+
+dominant_pc = pca_df.idxmax(axis=1)
+
+plt.figure(figsize=(12, 8))
+sns.scatterplot(
+    x=umap_embeddings[:, 0], 
+    y=umap_embeddings[:, 1], 
+    hue=dominant_pc, 
+    palette='tab20',
+    s=10,
+    alpha=0.8
+)
+
+plt.title("UMAP Colored by Most Dominant Principal Component (PC1-PC13)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper right', title='Dominant PC')
+plt.show()
+
+```
+
+```{python}
+#| label: merge_on_parcel_id
+#| include: false
+
+parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
+
+residential_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2025 MLS Residential Sales.xlsm", sheet_name = "Sales")
+
+land_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 MLS Land Sales.xlsm", sheet_name = "Sales")
+
+multi_fam_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 Multi-Family MLS Export.xlsm", sheet_name = "textexport (3)")
+
+res = residential_export.rename(columns={'Parcel Number': 'ParcelId'})
+land = land_export.rename(columns={'Parcel Number': 'ParcelId'})
+multi = multi_fam_export.rename(columns={'Parcel Number': 'ParcelId'})
+
+property_pool = pd.concat([res, land, multi], ignore_index=True, sort=False)
+
+merged_df = pd.merge(
+    parcel_export, 
+    property_pool, 
+    on='ParcelId', 
+    how='left'
+)
+
+# merged_df.to_csv('all_merged_w_parcel.csv', index=False)
+
+```
+
+```{python}
+#| label: view all numberic columns
+#| include: false
+
+all_numeric_cols = merged_df.select_dtypes(include=[np.number]).columns.tolist() 
+all_numeric_cols.sort()
+all_numeric_cols
+
+```
+
+```{python}
+#| label: view all non-numeric columns
+#| include: false
+
+all_non_numeric_cols = merged_df.select_dtypes(exclude=[np.number]).columns.tolist()
+all_non_numeric_cols.sort()
+all_non_numeric_cols
+
+```
+
+```{python}
+#| label: city identification
+#| include: false
+
+merged_df['city'] = [res['name'] if pd.notnull(lat) and pd.notnull(lng) else "Unknown" 
+              for res, lat, lng in zip(rg.search([(r['Lat'], r['Lng']) if pd.notnull(r['Lat']) else (0,0) 
+                                                  for _, r in merged_df.iterrows()]), merged_df['Lat'], merged_df['Lng'])]
+
+merged_df['city'].value_counts()
+
+```
+
+```{python}
+#| label: find pca loadings
+#| include: false
+
+data_to_transform = merged_df[numeric_cols].fillna(0)
+
+pt = PowerTransformer(method='yeo-johnson')
+
+transformed_data = pd.DataFrame(index=data_to_transform.index)
+
+for i in data_to_transform.columns:
+    new_col_name = f"{i}_inv"
+    transformed_data[new_col_name] = pt.fit_transform(data_to_transform[[i]])
+
+scaled_data = scaler.fit_transform(transformed_data)
+
+pca_output = pca.transform(scaled_data)
+
+pca_cols = [f'PC{i+1}' for i in range(pca.n_components_)]
+pca_df = pd.DataFrame(pca_output, columns=pca_cols, index=merged_df.index)
+merged_df = pd.concat([merged_df, pca_df], axis=1)
+
+```
+
+```{python}
+#| label: cpi adjustment
+#| include: false
+
+cpi.update()
+
+merged_df['SaleYear'] = pd.to_datetime(merged_df['ReviewedDate'], unit='D', origin='1899-12-30').dt.year
+
+unique_years = [int(y) for y in merged_df['SaleYear'].unique() if pd.notna(y)]
+cpi_lookup = {}
+for year in unique_years:
+    try:
+        cpi_lookup[year] = cpi.get(year)
+    except Exception:
+        cpi_lookup[year] = cpi.get(2024)
+target_cpi = cpi.get(2024)
+
+merged_df['cpi_index_at_sale'] = merged_df['SaleYear'].map(cpi_lookup)
+merged_df['CPI Adjusted Sold Price'] = (merged_df['Sold Price'] * target_cpi) / merged_df['cpi_index_at_sale']
+
+merged_df[['Sold Price', 'CPI Adjusted Sold Price']].describe()
+
+```
+
+```{python}
+#| label: price eval
+#| include: false
+
+sns.set_theme(style="whitegrid")
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+sns.histplot(merged_df['Sold Price'], bins=50, kde=True, ax=axes[0], color='skyblue')
+axes[0].set_title('Original Sold Price (Nominal)', fontsize=14)
+axes[0].set_xlabel('Price ($)')
+axes[0].xaxis.set_major_formatter(ticker.StrMethodFormatter('${x:,.0f}'))
+sns.histplot(merged_df['CPI Adjusted Sold Price'], bins=50, kde=True, ax=axes[1], color='salmon')
+axes[1].set_title('CPI Adjusted Sold Price (Real 2025$)', fontsize=14)
+axes[1].set_xlabel('Price ($)')
+axes[1].xaxis.set_major_formatter(ticker.StrMethodFormatter('${x:,.0f}'))
+plt.tight_layout()
+plt.show()
+
+```
+
+```{python}
+#| label: boxcox on cpi price
+#| include: false
+
+clean_y = merged_df[merged_df['CPI Adjusted Sold Price'] > 0]['CPI Adjusted Sold Price']
+
+_, opt_lambda = stats.boxcox(clean_y)
+fig, ax = plt.subplots(figsize=(10, 6))
+
+stats.boxcox_normplot(clean_y, -20, 20, plot=ax)
+
+ax.axvline(opt_lambda, color='red', linestyle='--', label=f'Optimal $\lambda$: {opt_lambda:.4f}')
+
+plt.legend()
+plt.title('Box-Cox Log-Likelihood Plot')
+plt.grid(True, alpha=0.3)
+plt.show()
+
+```
+
+```{python}
+#| label: price transformation
+#| include: false
+
+clean_data = merged_df[merged_df['CPI Adjusted Sold Price'] > 0]['CPI Adjusted Sold Price']
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+sns.set_theme(style="whitegrid")
+sns.histplot(np.log1p(clean_data), bins=50, kde=True, ax=axes[0], color='teal')
+axes[0].set_title('Log Transformed Price', fontsize=14)
+axes[0].set_xlabel('Log(Price)')
+sns.histplot(np.sqrt(clean_data), bins=50, kde=True, ax=axes[1], color='purple')
+axes[1].set_title('Square Root Transformed Price', fontsize=14)
+axes[1].set_xlabel('Sqrt(Price)')
+plt.tight_layout()
+plt.show()
+
+merged_df['Sqrt CPI Adjusted Sold Price'] = np.sqrt(merged_df['CPI Adjusted Sold Price'])
+
+merged_df['Sqrt CPI Adjusted Sold Price'].describe()
+
+```
+
+```{python}
+#| label: pca model
+#| include: false
+
+X = merged_df[['PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13']]
+y = merged_df['Sqrt CPI Adjusted Sold Price']
+mask = y.notna()
+X, y = X[mask], y[mask]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+X_with_const = sm.add_constant(X_train)
+sm_model = sm.OLS(y_train, X_with_const).fit()
+
+print(sm_model.summary())
+
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_with_const.columns
+vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                   for i in range(len(X_with_const.columns))]
+
+print(vif_data.sort_values(by="VIF", ascending=False))
+
+```
+
+```{python}
+#| label: pre-pca regression
+#| include: false
+
+X = merged_df[numeric_cols].fillna(0)
+y = merged_df['Sqrt CPI Adjusted Sold Price']
+mask = y.notna()
+X, y = X[mask], y[mask]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+X_with_const = sm.add_constant(X_train)
+sm_model = sm.OLS(y_train, X_with_const).fit()
+
+print(sm_model.summary())
+
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_with_const.columns
+vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                   for i in range(len(X_with_const.columns))]
+
+print(vif_data.sort_values(by="VIF", ascending=False))
+
+```
+
+# Road Map & Next Steps
+
+## CPI Adjustments {.center}
+
+Reasoning: Due to inflation, the value of a dollar today is not the same as it was a year ago or will be in a year. To ensure that all of the dollar amounts we are predicting equate to the same value, we need to adjust for these market fluxuations.
+
+Role of the Students: Our role is to prepare the data for the adjustments by consolidating insights about markets and sub-markets in with a master dataset for the Commissioners office to work with.
+
+Role of the Commissioner Office: The role of the commissioner office is to conduct the CPI adjustments on the master dataset and return it back to the students for model integration.
+
+## Modeling {.center}
+
+Modeling: As we move into the modeling, we want to combine insights from the unsupervised modeling into our supervised modeling process. As mentioned previously, we will want to add interaction variables for markets and sub-markets. Another interaction variable that may be beneficial is location, as rural areas may be priced differently compared to urban areas. As previously mentioned, the goal of the modeling is to account for 90% or more of the variation in price.
+
+Validation: As we model, we need to validate the models so that the predictions can be trusted.
+
+## Application {.center}
+
+Deployment: Once a model is chosen, it will then be implemented into a user-friendly platform for the Commissioners Office, such that predictions and drivers are identified.
+
+
+
+
+```{python}
+#| label: pca all data
+#| include: false
+
+pcadata = merged_df
+
+num_cols = merged_df.select_dtypes(include='number').columns
+print(num_cols)
+num_cols = num_cols.drop(['TaxYear', 'Lat', 'Lng', 'ReviewedDate', 'List Number', 'End Date', 'Fallthrough Date', 'Withdrawal Date', 'Cancel Date', 'Original List Price', 'List Price', 'Sold Price', 'MLS Area', 'Postal Code','Sold Price Per/SqFt', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11','PC12', 'PC13', 'SaleYear', 'cpi_index_at_sale', 'CPI Adjusted Sold Price', 'Sqrt CPI Adjusted Sold Price'])
+pcadata_num = merged_df[num_cols].fillna(0).astype('float32')
+
+pt = PowerTransformer(method='yeo-johnson', standardize=True)
+pcascaled_data = pt.fit_transform(pcadata_num)
+
+pca_full = PCA(n_components=None)
+pca_full.fit(pcascaled_data)
+
+cumulative_variance = pca_full.explained_variance_ratio_.cumsum()
+n_components_90 = np.argmax(cumulative_variance >= 0.9) + 1
+
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(pca_full.explained_variance_ratio_) + 1), 
+         pca_full.explained_variance_ratio_.cumsum(), 
+         marker='o', linestyle='--')
+plt.axhline(y=0.9, color='r', linestyle=':', label='90% Threshold')
+plt.axvline(x=n_components_90, color='g', linestyle=':', 
+            label=f'Optimal: {n_components_90} Components')
+plt.title('Scree Plot (Cumulative Variance)')
+plt.xlabel('Number of Components')
+plt.ylabel('Cumulative Explained Variance')
+plt.grid()
+plt.show()
+
+pca = PCA(n_components=20)
+principal_components = pca.fit_transform(pcascaled_data)
+pca_transformed_values = pca.transform(pcascaled_data) 
+
+pca_df = pd.DataFrame(data=principal_components, columns=[
+    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14' ,'PC15', 'PC16', 'PC17', 'PC18', 'PC19', 'PC20'])
+
+pca.explained_variance_ratio_.sum()
+
+loadings = pd.DataFrame(
+    pca.components_.T, 
+    columns=[f'PC{i+1}' for i in range(pca.n_components_)], 
+    index=pcadata_num.columns
+)
+
+plt.figure(figsize=(12, 8))
+sns.heatmap(loadings, annot=False, cmap='RdBu', center=0)
+
+plt.title('Feature Loadings: Correlation between Original Variables and PCs')
+plt.xlabel('Principal Components')
+plt.ylabel('Original Features')
+plt.show()
+
+pca_cols = [f'PC{i+1}' for i in range(pca.n_components_)]
+pca_df = pd.DataFrame(pca_transformed_values, columns=pca_cols, index=pcadata.index)
+pcadata = pd.concat([pcadata, pca_df], axis=1)
+
+```
+
+```{python}
+#| label: all pca regression
+#| include: false
+
+pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+
+X = pcadata[[
+    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14' ,'PC15', 'PC16', 'PC17', 'PC18', 'PC19', 'PC20']]
+y = pcadata['CPI Adjusted Sold Price']
+mask = y.notna()
+X, y = X[mask], y[mask]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+X_with_const = sm.add_constant(X_train)
+sm_model = sm.OLS(y_train, X_with_const).fit()
+
+print(sm_model.summary())
+
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_with_const.columns
+vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                   for i in range(len(X_with_const.columns))]
+
+print(vif_data.sort_values(by="VIF", ascending=False))
+
+```
+
+```{python}
+#| label: model validation for all pca
+#| include: false
+
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import seaborn as sns
+
+plt.figure(figsize=(10, 6))
+sns.residplot(x=sm_model.fittedvalues, y=sm_model.resid, lowess=True, 
+              line_kws={'color': 'red', 'lw': 1})
+plt.title('Residuals vs Fitted (Checking Homoscedasticity)')
+plt.xlabel('Fitted Values (Predicted Price)')
+plt.ylabel('Residuals')
+plt.show()
+
+# 2. Q-Q Plot (Checking Normality)
+fig, ax = plt.subplots(figsize=(8, 6))
+sm.qqplot(sm_model.resid, line='45', fit=True, ax=ax)
+plt.title('Normal Q-Q Plot (Checking Residual Distribution)')
+plt.show()
+
+```
+
+```{python}
+#| label: all pca regression take 2
+#| include: false
+
+pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+
+X = pcadata[[
+    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14' ,'PC15', 'PC16', 'PC17', 'PC18', 'PC19', 'PC20']]
+y = np.log(pcadata['CPI Adjusted Sold Price'])
+mask = y.notna()
+X, y = X[mask], y[mask]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+X_with_const = sm.add_constant(X_train)
+sm_model = sm.OLS(y_train, X_with_const).fit()
+
+print(sm_model.summary())
+
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_with_const.columns
+vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                   for i in range(len(X_with_const.columns))]
+
+print(vif_data.sort_values(by="VIF", ascending=False))
+
+```
+
+```{python}
+#| label: model validation for all pca take 2
+#| include: false
+
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import seaborn as sns
+
+plt.figure(figsize=(10, 6))
+sns.residplot(x=sm_model.fittedvalues, y=sm_model.resid, lowess=True, 
+              line_kws={'color': 'red', 'lw': 1})
+plt.title('Residuals vs Fitted (Checking Homoscedasticity)')
+plt.xlabel('Fitted Values (Predicted Price)')
+plt.ylabel('Residuals')
+plt.show()
+
+# 2. Q-Q Plot (Checking Normality)
+fig, ax = plt.subplots(figsize=(8, 6))
+sm.qqplot(sm_model.resid, line='45', fit=True, ax=ax)
+plt.title('Normal Q-Q Plot (Checking Residual Distribution)')
+plt.show()
+
+'''
+Taking the log of the cpi adjusted sales price made the data fit the asusmptions of the model. Hwoever, we can now see that a linear model is only capturing about half of the variation in y. Time to move on to a non-linear model
+'''
+
+```
+
+```{python}
+#| label: random forest on primary components
+#| include: false
+
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+
+pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+
+pc_cols = [f'PC{i}' for i in range(1, 21)]
+
+# 2. Create a temporary combined dataframe to ensure perfect row alignment
+temp_df = pcadata[pc_cols + ['CPI Adjusted Sold Price']].dropna()
+
+# 3. Separate them back out
+X = temp_df[pc_cols]
+y = temp_df['CPI Adjusted Sold Price']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=2026)
+rf_model.fit(X_train, y_train)
+
+y_pred = rf_model.predict(X_test)
+
+print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
+print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
+
+importances = pd.Series(rf_model.feature_importances_, index=X.columns)
+importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
+
+```
+
+```{python}
+#| label: random forest model validation
+#| include: false
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+y_pred = rf_model.predict(X_test)
+residuals = y_test - y_pred
+
+fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+
+# 2. Residual Plot with LOESS line
+# lowess=True handles the non-linear trend line automatically
+sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
+            lowess=True, 
+            scatter_kws={'alpha': 0.3}, 
+            line_kws={'color': 'red', 'lw': 2})
+
+ax[0].axhline(y=0, color='black', linestyle='--')
+ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
+ax[0].set_xlabel('Predicted Price')
+ax[0].set_ylabel('Residuals')
+
+# 3. QQ Plot
+sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
+ax[1].set_title('RF Residuals Q-Q Plot')
+
+plt.tight_layout()
+plt.show()
+
+```
+
+```{python}
+#| label: random forest on primary components take 2
+#| include: false
+
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+
+pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+
+pc_cols = [f'PC{i}' for i in range(1, 21)]
+
+# 2. Create a temporary combined dataframe to ensure perfect row alignment
+temp_df = pcadata[pc_cols + ['CPI Adjusted Sold Price']].dropna()
+
+# 3. Separate them back out
+X = temp_df[pc_cols]
+y = np.log(temp_df['CPI Adjusted Sold Price'])
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=2026)
+rf_model.fit(X_train, y_train)
+
+y_pred = rf_model.predict(X_test)
+
+print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
+print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
+
+importances = pd.Series(rf_model.feature_importances_, index=X.columns)
+importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
+```
+
+```{python}
+#| label: random forest model validation take 2
+#| include: false
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+y_pred = rf_model.predict(X_test)
+residuals = y_test - y_pred
+
+fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+
+# 2. Residual Plot with LOESS line
+# lowess=True handles the non-linear trend line automatically
+sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
+            lowess=True, 
+            scatter_kws={'alpha': 0.3}, 
+            line_kws={'color': 'red', 'lw': 2})
+
+ax[0].axhline(y=0, color='black', linestyle='--')
+ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
+ax[0].set_xlabel('Predicted Price')
+ax[0].set_ylabel('Residuals')
+
+# 3. QQ Plot
+sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
+ax[1].set_title('RF Residuals Q-Q Plot')
+
+plt.tight_layout()
+plt.show()
+
+'''
+While taking the log took care of the fanning issue, there are still some heavy tails. Next attempt will be making adjustments to the max_depth and number of trees in the random forest.
+'''
+```
+
+```{python}
+#| label: optimized random forest
+#| include: false
+
+from sklearn.model_selection import RandomizedSearchCV
+import numpy as np
+
+valid_data = pcadata[pcadata['CPI Adjusted Sold Price'] > 0].copy()
+
+# 2. Create your target (Sqrt transform)
+valid_data['target'] = np.sqrt(valid_data['CPI Adjusted Sold Price'])
+
+# 3. Define X and y from the SAME dataframe
+pc_cols = [f'PC{i}' for i in range(1, 21)]
+X = valid_data[pc_cols]
+y = valid_data['target']
+
+# Now they are guaranteed to have the same number of rows
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+param_dist = {
+    'n_estimators': [100, 200, 500],           # Number of trees (more is usually better, but slower)
+    'max_depth': [10, 20, 30, None],          # How deep each tree goes (prevents overfitting)
+    'min_samples_split': [2, 5, 10],          # Min samples required to split a node
+    'min_samples_leaf': [1, 2, 4],            # Min samples required at a leaf node
+    'max_features': ['sqrt', 'log2', None]    # Number of features to consider at each split
+}
+
+rf_random = RandomizedSearchCV(
+    estimator=RandomForestRegressor(random_state=2026),
+    param_distributions=param_dist,
+    n_iter=20, 
+    cv=5, 
+    scoring='neg_mean_absolute_error', 
+    verbose=2, 
+    random_state=2026, 
+    n_jobs=-1 
+)
+
+rf_random.fit(X_train, y_train)
+
+print(f"Best Parameters: {rf_random.best_params_}")
+
+# 5. Use the best model for predictions
+best_rf = rf_random.best_estimator_
+y_pred_tuned = best_rf.predict(X_test)
+
+```
+
+```{python}
+#| label: random forest on primary components take 3
+#| include: false
+
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+
+pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+
+pc_cols = [f'PC{i}' for i in range(1, 21)]
+
+# 2. Create a temporary combined dataframe to ensure perfect row alignment
+temp_df = pcadata[pc_cols + ['CPI Adjusted Sold Price']].dropna()
+
+# 3. Separate them back out
+X = temp_df[pc_cols]
+y = np.log(temp_df['CPI Adjusted Sold Price'])
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+rf_model = RandomForestRegressor(n_estimators=500, min_samples_split=2, min_samples_leaf=2, max_depth=None, random_state=2026)
+rf_model.fit(X_train, y_train)
+
+y_pred = rf_model.predict(X_test)
+
+print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
+print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
+
+importances = pd.Series(rf_model.feature_importances_, index=X.columns)
+importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
+
+```
+
+```{python}
+#| label: random forest model validation take 3
+#| include: false
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+y_pred = rf_model.predict(X_test)
+residuals = y_test - y_pred
+
+fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+
+# 2. Residual Plot with LOESS line
+# lowess=True handles the non-linear trend line automatically
+sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
+            lowess=True, 
+            scatter_kws={'alpha': 0.3}, 
+            line_kws={'color': 'red', 'lw': 2})
+
+ax[0].axhline(y=0, color='black', linestyle='--')
+ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
+ax[0].set_xlabel('Predicted Price')
+ax[0].set_ylabel('Residuals')
+
+# 3. QQ Plot
+sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
+ax[1].set_title('RF Residuals Q-Q Plot')
+
+plt.tight_layout()
+plt.show()
+
+'''
+While 90% variation is explained with this model, the pca may have smoothed out some of the patterns that the random forest model could have picked up on, but isn't because its smoothed out. Now to try adding the raw data back in along side the pca, as random forest handles the multicollinearity.
+'''
+```
+
+```{python}
+#| label: random forest on primary components take 4
+#| include: false
+
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+
+pcadata = pcadata[pcadata['CPI Adjusted Sold Price'] != 0]
+
+pc_cols = [f'PC{i}' for i in range(1, 21)]
+
+combined_df = pd.concat([pcadata['CPI Adjusted Sold Price'], pcadata_num, pcadata[pc_cols]], axis=1)
+
+combined_df = combined_df.dropna()
+
+# 3. Separate them back out
+X = combined_df.drop(columns=['CPI Adjusted Sold Price'])
+y = np.log(combined_df['CPI Adjusted Sold Price'])
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+rf_model = RandomForestRegressor(n_estimators=500, min_samples_split=2, min_samples_leaf=2, max_depth=None, random_state=2026)
+rf_model.fit(X_train, y_train)
+
+y_pred = rf_model.predict(X_test)
+
+print(f"R^2 Score: {r2_score(y_test, y_pred):.4f}")
+print(f"Mean Absolute Error: ${mean_absolute_error(y_test, y_pred):,.2f}")
+
+importances = pd.Series(rf_model.feature_importances_, index=X.columns)
+importances.sort_values().plot(kind='barh', title='Importance of Principal Components')
+
+```
+
+```{python}
+#| label: random forest model validation take 4
+#| include: false
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+y_pred = rf_model.predict(X_test)
+residuals = y_test - y_pred
+
+fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+
+# 2. Residual Plot with LOESS line
+# lowess=True handles the non-linear trend line automatically
+sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
+            lowess=True, 
+            scatter_kws={'alpha': 0.3}, 
+            line_kws={'color': 'red', 'lw': 2})
+
+ax[0].axhline(y=0, color='black', linestyle='--')
+ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
+ax[0].set_xlabel('Predicted Price')
+ax[0].set_ylabel('Residuals')
+
+# 3. QQ Plot
+sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
+ax[1].set_title('RF Residuals Q-Q Plot')
+
+plt.tight_layout()
+plt.show()
+
+```
+
+```{python}
+#| label: rf4 outliers
+#| include: false
+
+residuals = y_test - y_pred
+
+std_residuals = (residuals - residuals.mean()) / residuals.std()
+
+extreme_outlier_mask = std_residuals > 5
+
+extreme_outliers = X_test[extreme_outlier_mask].copy()
+
+extreme_outliers['Actual_Log_Price'] = y_test[extreme_outlier_mask]
+extreme_outliers['Predicted_Log_Price'] = y_pred[extreme_outlier_mask]
+extreme_outliers['Std_Residual'] = std_residuals[extreme_outlier_mask]
+
+print(f"Found {len(extreme_outliers)} entries with Sample Quantiles > 5")
+print(extreme_outliers.head())
+```
+
+```{python}
+#| label: random forest model validation take 5
+#| include: false
+
+# 1. Filter out the extreme outliers from your test sets
+# 1. Identify and remove outliers from the TRAINING set (where the model learns)
+y_train_pred_initial = rf_model.predict(X_train) 
+train_residuals = y_train - y_train_pred_initial
+std_train_residuals = (train_residuals - train_residuals.mean()) / train_residuals.std()
+
+# Create mask for training (keeping only those <= 5 std devs)
+train_clean_mask = std_train_residuals.abs() <= 5
+X_train_clean = X_train[train_clean_mask]
+y_train_clean = y_train[train_clean_mask]
+
+# 2. Use your existing mask for the TEST set
+X_test_clean = X_test[~extreme_outlier_mask]
+y_test_clean = y_test[~extreme_outlier_mask]
+
+# 3. RE-FIT the model on the CLEAN training data
+rf_model = RandomForestRegressor(n_estimators=500, min_samples_split=2, min_samples_leaf=2, max_depth=None, random_state=2026)
+rf_model.fit(X_train_clean, y_train_clean)
+
+# 4. Predict on the CLEAN test set
+y_pred_clean = rf_model.predict(X_test_clean)
+
+# 5. Report new metrics
+print(f"New R^2 Score: {r2_score(y_test_clean, y_pred_clean):.4f}")
+print(f"New Mean Absolute Error: ${mean_absolute_error(y_test_clean, y_pred_clean):,.2f}")
+
+# 6. Plot updated feature importance
+importances = pd.Series(rf_model.feature_importances_, index=X.columns)
+importances.sort_values().plot(kind='barh', title='Importance of Principal Components (Cleaned Data)')
+
+```
+```{python}
+#| label: random forest model validation take 5
+#| include: false
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+y_pred = rf_model.predict(X_test)
+residuals = y_test - y_pred
+
+fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+
+# 2. Residual Plot with LOESS line
+# lowess=True handles the non-linear trend line automatically
+sns.regplot(x=y_pred, y=residuals, ax=ax[0], 
+            lowess=True, 
+            scatter_kws={'alpha': 0.3}, 
+            line_kws={'color': 'red', 'lw': 2})
+
+ax[0].axhline(y=0, color='black', linestyle='--')
+ax[0].set_title('RF Residuals vs Predicted (with LOESS)')
+ax[0].set_xlabel('Predicted Price')
+ax[0].set_ylabel('Residuals')
+
+# 3. QQ Plot
+sm.qqplot(residuals, line='45', fit=True, ax=ax[1])
+ax[1].set_title('RF Residuals Q-Q Plot')
+
+plt.tight_layout()
+plt.show()
+
+```
