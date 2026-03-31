@@ -1,0 +1,588 @@
+---
+format: html
+urlcolor: blue
+engine: jupyter3
+execute: 
+  eval: true
+  echo: true
+  cache: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Import Libraries
+```{python}
+#| label: Initial Imports
+#| cache: true
+
+import pandas as pd
+import numpy as np
+from pandas import read_csv
+from pandas.core.common import random_state
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import seaborn as sns
+import sklearn
+import umap
+from scipy import stats
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import QuantileTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import PowerTransformer
+import hdbscan
+from hdbscan import validity
+import reverse_geocoder as rg
+import cpi
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+
+```
+## Function Creation
+
+```{python}
+#| label: function creation
+
+def normalize(df):
+    """
+    Returns two dataframes:
+    1. df_quantile: Everything forced to normal via Quantile Transformation.
+    2. df_comp: Each column transformed by the 'winner' of YJ vs. Quantile.
+    """
+    df_quantile = pd.DataFrame(index=df.index)
+    df_comp = pd.DataFrame(index=df.index)
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    
+    for col in numeric_cols:
+        data_raw = df[col].values.reshape(-1, 1)
+
+        # Yeo-Johnson
+        yj_data, lmbda = stats.yeojohnson(df[col])
+        _, yj_p = stats.normaltest(yj_data)
+        
+        # Normality test for the Quantile data
+        qt_engine = QuantileTransformer(output_distribution='normal', 
+                                        n_quantiles=min(len(df), 1000), 
+                                        random_state=42)
+        qt_data = qt_engine.fit_transform(data_raw).flatten()
+        _, qt_p = stats.normaltest(qt_data)
+        
+        if yj_p >= qt_p:
+            # Determine suffix for YJ winner
+            if -0.1 <= lmbda <= 0.1: suffix = "log"
+            elif 0.4 <= lmbda <= 0.6: suffix = "sqrt"
+            elif 0.9 <= lmbda <= 1.1: suffix = "linear"
+            elif lmbda < 0: suffix = "inv"
+            else: suffix = "pow"
+            df_comp[f"{col}_{suffix}"] = yj_data
+        else:
+            df_comp[f"{col}_quant"] = qt_data
+            
+    print(f"Experiments complete for {len(numeric_cols)} variables.")
+    return df_comp
+
+```
+# Unsupervised Learning
+
+## Read in Parcel Data
+```{python}
+#| label: Read in Parcel Export Sheet 2
+#| cache: true
+
+parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
+parcel_export.head()
+parcel_export.shape # (53277, 53)
+parcel_export.info()
+
+```
+## View the Non-Numeric Variables
+```{python}
+#| label: Non-numeric columns
+#| cache: true
+
+non_numeric_cols = parcel_export.select_dtypes(exclude=[np.number]).columns.tolist()
+parcel_export[non_numeric_cols].shape # (53277, 12)
+parcel_export[non_numeric_cols].info()
+parcel_export[non_numeric_cols].columns
+
+```
+## View the Numeric Variables
+```{python}
+#| label: Numeric columns
+#| cache: true
+
+numeric_cols = parcel_export.select_dtypes(include=[np.number]).columns.tolist() 
+parcel_export[numeric_cols].shape # (53277, 41)
+parcel_export[numeric_cols].info() 
+parcel_export[numeric_cols].columns
+
+```
+## Move the Categorical Numeric Variables Out
+```{python}
+#| label: Numeric Column Adjustment
+
+cols_to_move = ['TaxYear', 'ImpOnly', 'PropType ', 'Jurisdiction', 'SpecificPropType', 'Lat', 'Lng', 'ReviewedDate', 'ImpCode', 'Res Imp Count']
+non_numeric_cols = list(set(non_numeric_cols) | set(cols_to_move))
+numeric_cols = [c for c in parcel_export.columns if c not in non_numeric_cols]
+
+parcel_export[numeric_cols].shape # (53277, 31)
+
+```
+## Fill in NA's with 0
+```{python}
+#| label: Fill in NAs for numeric columns with 0
+
+parcel_export[numeric_cols] = parcel_export[numeric_cols].fillna(0)
+
+```
+
+```{python}
+#| label: Filter Parcel Export for PCA (only numeric columns)
+#| cache: true
+
+numeric_parcel_data = parcel_export[numeric_cols]
+
+numeric_parcel_data.shape # (53277, 24)
+numeric_parcel_data.info()
+
+```
+
+```{python}
+#| label: Perform Transformations
+
+df_competition = normalize(numeric_parcel_data)
+df_competition.columns
+
+```
+## Scale and Conduct PCA
+```{python}
+#| label: Scaling the data for PCA
+#| cache: true
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df_competition)
+
+```
+
+```{python}
+#| label: PCA and Scree Plot
+#| cache: true
+
+pca_full = PCA(n_components=None)
+pca_full.fit(X_scaled)
+
+```
+## PCA Scree Plot
+```{python}
+#| label: Scree Plot to optimize number of components
+#| cache: true
+
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, len(pca_full.explained_variance_ratio_) + 1), 
+         pca_full.explained_variance_ratio_.cumsum(), 
+         marker='o', linestyle='--')
+plt.title('Scree Plot (Cumulative Variance)')
+plt.xlabel('Number of Components')
+plt.ylabel('Cumulative Explained Variance')
+plt.grid()
+plt.show()
+
+```
+
+```{python}
+#| label: PCA with 13 components
+#| cache: true
+
+pca = PCA(n_components=13)
+principal_components = pca.fit_transform(X_scaled)
+
+pca_df = pd.DataFrame(data=principal_components, columns=[
+    'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13'])
+
+pca.explained_variance_ratio_.sum()
+
+```
+## PCA Loading Matrix
+```{python}
+#| label: Loading Matrix
+
+loadings = pd.DataFrame(
+    pca.components_.T, 
+    columns=[f'PC{i+1}' for i in range(pca.n_components_)], 
+    index=df_competition.columns
+)
+
+plt.figure(figsize=(12, 8))
+sns.heatmap(loadings, annot=True, cmap='RdBu', center=0)
+
+plt.title('Feature Loadings: Correlation between Original Variables and PCs')
+plt.xlabel('Principal Components')
+plt.ylabel('Original Features')
+plt.show()
+
+```
+
+```{python}
+#| label: umap settings
+
+reducer = umap.UMAP(
+    n_neighbors=50, 
+    min_dist=0.01, 
+    random_state=42
+)
+
+```
+
+```{python}
+#| label: UMAP
+
+umap_embeddings = reducer.fit_transform(pca_df)
+
+```
+## KMeans Cluster Scree Plot
+```{python}
+#| label: identify number of clusters
+
+inertia = []
+k_range = range(1, 11) 
+
+for k in k_range:
+    kmeans_test = KMeans(n_clusters=k, random_state=42, n_init="auto")
+    kmeans_test.fit(pca_df)
+    inertia.append(kmeans_test.inertia_)
+
+plt.figure(figsize=(8, 4))
+plt.plot(k_range, inertia, marker='o', linestyle='--')
+plt.title('Elbow Method to Identify Optimal Clusters')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Inertia (Within-Cluster Sum of Squares)')
+plt.xticks(k_range)
+plt.grid(True)
+plt.show()
+
+```
+## KMeans Clustering on UMAP
+```{python}
+#| label: final clustering
+
+optimal_k = 13
+
+final_model = KMeans(n_clusters=optimal_k, random_state=42, n_init="auto")
+labels = final_model.fit_predict(umap_embeddings)
+
+plt.figure(figsize=(10, 7))
+plt.scatter(umap_embeddings[:, 0], umap_embeddings[:, 1], c=labels, cmap='viridis', s=5)
+plt.colorbar(label='Cluster Label')
+plt.title(f"UMAP Projection with {optimal_k} K-Means Clusters")
+plt.show()
+
+```
+## HDBSCAN Clustering on UMAP
+```{python}
+#| label: HDBSCAN Clustering
+
+for i in range(100,600,100):
+    print(f"HDBSCAN with min_cluster_size = {i}")
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=i, gen_min_span_tree=True)
+    cluster_labels = clusterer.fit_predict(umap_embeddings)
+
+    n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+
+    score = validity.validity_index(umap_embeddings.astype('double'), cluster_labels)
+    print(f"DBCV Score: {score:.3f}")
+
+    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
+    plt.figure(figsize=(10, 8))
+    plt.scatter(
+        umap_embeddings[:, 0], 
+        umap_embeddings[:, 1], 
+        c=cluster_labels,      
+        cmap='Spectral', 
+        s=5)
+    plt.title('Housing Clusters via HDBSCAN (Organic Shapes)')
+    plt.colorbar(label='Cluster Label')
+    plt.title(f"UMAP Projection with {n_clusters} HDBSCAN Clusters")
+    plt.show()
+
+```
+
+```{python}
+#| label: Cluster Profiling
+
+numeric_parcel_data['Cluster_ID'] = cluster_labels
+
+cluster_profile = numeric_parcel_data.groupby('Cluster_ID').mean()
+
+print(cluster_profile.T)
+
+```
+## PCA Clustering on UMAP
+```{python}
+#| label: PCA Clustering on UMAP
+
+dominant_pc = pca_df.idxmax(axis=1)
+
+plt.figure(figsize=(12, 8))
+sns.scatterplot(
+    x=umap_embeddings[:, 0], 
+    y=umap_embeddings[:, 1], 
+    hue=dominant_pc, 
+    palette='tab20',
+    s=10,
+    alpha=0.8
+)
+
+plt.title("UMAP Colored by Most Dominant Principal Component (PC1-PC13)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper right', title='Dominant PC')
+plt.show()
+
+```
+___________________________
+
+Key Findings: 
+- PCA Components: 
+    - PC1: contains standard variables. 
+    - PC2: focus on recreational outdoor features (ex pools, rec courts, etc)
+    - PC3: focus on utility outdoor features (ex sheds, barns, etc)
+    - PC4: focus on aggrecultural vs recreational utility features (carport v barn)
+    - PC5: focus on guest features vs personal features (guest house v gazebo)
+    - PC6: 
+    - PC7: 
+    - PC8: 
+    - PC9: focus on external vehical storage vs general utility (detached garage v shed)
+    - PC10: focus on attached vehical storage vs general utility (carport v shed)
+    - PC11: focus on basement space and completion over vehical storage
+    - PC12: focus on the land
+    - PC13: focus on half-bath
+
+Essentially, the standard features are evaluated in the first PC. All subsequent components look at the different combonations of features for various focuses, such as recreation, utility, etc. 
+
+The first PC (standard features) account for approximately 30% of variation in the home. All other feature account for 70% of what makes one home different from one another, with the biggest focuses for differentiation being recreation, utility, and, storage. Features such as half-bathrooms, while accounting for varation take up minimal percentage of differentiation.
+
+This is specifically with Iron county properties. As the majority of these homes are rural and thus are chosen based on these features, it makes sense that they account for 70% of home variation. 
+
+If the final project is a program that will take features and output price, it may also be useful to adapt this toward the buyer themself, and allow them to determine their focus, placing weights on the pc's themselves based on desired focus.
+
+# Supervised Learning
+
+## Create Merged Dataset
+```{python}
+#| label: merge_on_parcel_id
+
+parcel_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/Parcel Export.xlsx", sheet_name="Full Parcel Summary")
+
+residential_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2025 MLS Residential Sales.xlsm", sheet_name = "Sales")
+
+land_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 MLS Land Sales.xlsm", sheet_name = "Sales")
+
+multi_fam_export = pd.read_excel("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/data/2022 - 2025 Multi-Family MLS Export.xlsm", sheet_name = "textexport (3)")
+
+res = residential_export.rename(columns={'Parcel Number': 'ParcelId'})
+land = land_export.rename(columns={'Parcel Number': 'ParcelId'})
+multi = multi_fam_export.rename(columns={'Parcel Number': 'ParcelId'})
+
+property_pool = pd.concat([res, land, multi], ignore_index=True, sort=False)
+
+merged_df = pd.merge(
+    parcel_export, 
+    property_pool, 
+    on='ParcelId', 
+    how='left'
+)
+
+merged_df.to_csv('all_merged_w_parcel.csv', index=False)
+
+```
+## View Merged Numeric Variables
+```{python}
+#| label: view all numberic columns
+
+all_numeric_cols = merged_df.select_dtypes(include=[np.number]).columns.tolist() 
+all_numeric_cols.sort()
+all_numeric_cols
+
+```
+## View Merged Non-Numeric Variables
+```{python}
+#| label: view all non-numeric columns
+
+all_non_numeric_cols = merged_df.select_dtypes(exclude=[np.number]).columns.tolist()
+all_non_numeric_cols.sort()
+all_non_numeric_cols
+
+```
+## Identify City
+```{python}
+#| label: city identification
+
+merged_df['city'] = [res['name'] if pd.notnull(lat) and pd.notnull(lng) else "Unknown" 
+              for res, lat, lng in zip(rg.search([(r['Lat'], r['Lng']) if pd.notnull(r['Lat']) else (0,0) 
+                                                  for _, r in merged_df.iterrows()]), merged_df['Lat'], merged_df['Lng'])]
+
+merged_df['city'].value_counts()
+
+```
+
+```{python}
+#| label: find pca loadings
+
+data_to_transform = merged_df[numeric_cols].fillna(0)
+
+pt = PowerTransformer(method='yeo-johnson')
+
+transformed_data = pd.DataFrame(index=data_to_transform.index)
+
+for i in data_to_transform.columns:
+    new_col_name = f"{i}_inv"
+    transformed_data[new_col_name] = pt.fit_transform(data_to_transform[[i]])
+
+scaled_data = scaler.fit_transform(transformed_data)
+
+pca_output = pca.transform(scaled_data)
+
+pca_cols = [f'PC{i+1}' for i in range(pca.n_components_)]
+pca_df = pd.DataFrame(pca_output, columns=pca_cols, index=merged_df.index)
+merged_df = pd.concat([merged_df, pca_df], axis=1)
+
+```
+## CPI Adjusted Sales Price
+```{python}
+#| label: cpi adjustment
+
+cpi.update()
+
+merged_df['SaleYear'] = pd.to_datetime(merged_df['ReviewedDate'], unit='D', origin='1899-12-30').dt.year
+
+unique_years = [int(y) for y in merged_df['SaleYear'].unique() if pd.notna(y)]
+cpi_lookup = {}
+for year in unique_years:
+    try:
+        cpi_lookup[year] = cpi.get(year)
+    except Exception:
+        cpi_lookup[year] = cpi.get(2024)
+target_cpi = cpi.get(2024)
+
+merged_df['cpi_index_at_sale'] = merged_df['SaleYear'].map(cpi_lookup)
+merged_df['CPI Adjusted Sold Price'] = (merged_df['Sold Price'] * target_cpi) / merged_df['cpi_index_at_sale']
+
+merged_df[['Sold Price', 'CPI Adjusted Sold Price']].describe()
+
+```
+## Price Evaluation
+
+```{python}
+#| label: price eval
+
+sns.set_theme(style="whitegrid")
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+sns.histplot(merged_df['Sold Price'], bins=50, kde=True, ax=axes[0], color='skyblue')
+axes[0].set_title('Original Sold Price (Nominal)', fontsize=14)
+axes[0].set_xlabel('Price ($)')
+axes[0].xaxis.set_major_formatter(ticker.StrMethodFormatter('${x:,.0f}'))
+sns.histplot(merged_df['CPI Adjusted Sold Price'], bins=50, kde=True, ax=axes[1], color='salmon')
+axes[1].set_title('CPI Adjusted Sold Price (Real 2025$)', fontsize=14)
+axes[1].set_xlabel('Price ($)')
+axes[1].xaxis.set_major_formatter(ticker.StrMethodFormatter('${x:,.0f}'))
+plt.tight_layout()
+plt.show()
+
+```
+## BoxCox Plot
+```{python}
+#| label: boxcox on cpi price
+
+clean_y = merged_df[merged_df['CPI Adjusted Sold Price'] > 0]['CPI Adjusted Sold Price']
+
+_, opt_lambda = stats.boxcox(clean_y)
+fig, ax = plt.subplots(figsize=(10, 6))
+
+stats.boxcox_normplot(clean_y, -20, 20, plot=ax)
+
+ax.axvline(opt_lambda, color='red', linestyle='--', label=f'Optimal $\lambda$: {opt_lambda:.4f}')
+
+plt.legend()
+plt.title('Box-Cox Log-Likelihood Plot')
+plt.grid(True, alpha=0.3)
+plt.show()
+
+```
+## Price Transformation
+```{python}
+#| label: price transformation
+
+clean_data = merged_df[merged_df['CPI Adjusted Sold Price'] > 0]['CPI Adjusted Sold Price']
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+sns.set_theme(style="whitegrid")
+sns.histplot(np.log1p(clean_data), bins=50, kde=True, ax=axes[0], color='teal')
+axes[0].set_title('Log Transformed Price', fontsize=14)
+axes[0].set_xlabel('Log(Price)')
+sns.histplot(np.sqrt(clean_data), bins=50, kde=True, ax=axes[1], color='purple')
+axes[1].set_title('Square Root Transformed Price', fontsize=14)
+axes[1].set_xlabel('Sqrt(Price)')
+plt.tight_layout()
+plt.show()
+
+merged_df['Sqrt CPI Adjusted Sold Price'] = np.sqrt(merged_df['CPI Adjusted Sold Price'])
+
+merged_df['Sqrt CPI Adjusted Sold Price'].describe()
+
+```
+## Primary Component Regression
+```{python}
+#| label: pca model
+
+X = merged_df[['PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13']]
+y = merged_df['Sqrt CPI Adjusted Sold Price']
+mask = y.notna()
+X, y = X[mask], y[mask]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+X_with_const = sm.add_constant(X_train)
+sm_model = sm.OLS(y_train, X_with_const).fit()
+
+print(sm_model.summary())
+
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_with_const.columns
+vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                   for i in range(len(X_with_const.columns))]
+
+print(vif_data.sort_values(by="VIF", ascending=False))
+
+```
+This is the Physical Property Effect. Approximately 30% of the variance in price is explained by the weighted features of the home. 
+
+## Pre-PCA Regression
+
+```{python}
+#| label: pre-pca regression
+
+X = merged_df[numeric_cols].fillna(0)
+y = merged_df['Sqrt CPI Adjusted Sold Price']
+mask = y.notna()
+X, y = X[mask], y[mask]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2026)
+
+X_with_const = sm.add_constant(X_train)
+sm_model = sm.OLS(y_train, X_with_const).fit()
+
+print(sm_model.summary())
+
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_with_const.columns
+vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                   for i in range(len(X_with_const.columns))]
+
+print(vif_data.sort_values(by="VIF", ascending=False))
+
+```
+The reason the PCA's were used initially are because the PC's are orthgonal to eachother, which means there is no multicollinearity between the components. In a model using the same variables as what was used to compute the PC's, we do see a higher $R^2$ value, but that is due to the overfitting of the model which is a result of the multicollinearity evidenced by the VIF output. 
