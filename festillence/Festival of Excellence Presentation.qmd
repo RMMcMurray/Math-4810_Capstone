@@ -1,0 +1,444 @@
+---
+title: "Statistical Modeling of Iron County Property Values"
+author: "Ryan McMurray, Melanie Jensen, Viniccius Florindo Coelho"
+format: 
+  revealjs:
+    theme: league 
+    transition: slide
+    scrollable: true
+    slide-number: true
+    width: 1600
+    height: 900
+    footer: "Statistical Modeling of Iron County Property Values"
+    embed-resources: true
+urlcolor: blue
+jupyter: python3
+execute: 
+  eval: true
+  echo: false
+  cache: false
+editor_options: 
+  chunk_output_type: console
+---
+
+## The Problem
+
+- Property values are only captured at the **point of sale**
+- Between sales, assessors must estimate value manually — no data-driven basis
+- Estimates are inconsistently applied and **difficult to defend in court**
+- The result: property tax assessments that are arbitrary and legally vulnerable
+
+## Our Approach
+
+- **Phase 1 — Understanding the Market:** Identify what drives property value and uncover natural sub-markets
+- **Phase 2 — Building the Model:** Predict property value from numerical and non-numerical features
+- **Phase 3 — The Application:** A defensible, data-backed value estimate tool for assessors
+
+```{python}
+#| label: Initial Imports
+#| include: false
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import umap
+import hdbscan
+import pwlf
+import statsmodels.formula.api as smf
+import matplotlib.dates as mdates
+from scipy import stats
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, QuantileTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, r2_score
+from scipy.stats import rankdata
+
+# Helper for Feature Importance
+def get_feature_importance_table(model, X_train, title):
+    importances = model.feature_importances_
+    feat_df = pd.DataFrame({
+        'Feature': X_train.columns,
+        'Importance (%)': importances * 100
+    }).sort_values(by='Importance (%)', ascending=False).head(5)
+    feat_df['Dataset'] = title
+    return feat_df
+```
+
+```{python}
+# | label: melanie-setup-and-normalization
+# | include: false
+
+
+def normalize(df):
+    df_comp = pd.DataFrame(index=df.index)
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        data_raw = df[col].values.reshape(-1, 1)
+        yj_data, lmbda = stats.yeojohnson(
+            df[col] - df[col].min() + 1
+        )  # Shift to positive for YJ
+        qt_engine = QuantileTransformer(
+            output_distribution="normal",
+            n_quantiles=min(len(df), 1000),
+            random_state=42,
+        )
+        qt_data = qt_engine.fit_transform(data_raw).flatten()
+        _, yj_p = stats.normaltest(yj_data)
+        _, qt_p = stats.normaltest(qt_data)
+        if yj_p >= qt_p:
+            df_comp[f"{col}_yj"] = yj_data
+        else:
+            df_comp[f"{col}_quant"] = qt_data
+    return df_comp
+
+
+# FIXED PATHS
+base_path = "C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/"
+parcel_export = pd.read_excel(
+    base_path + "Parcel Export.xlsx", sheet_name="Full Parcel Summary"
+)
+
+# Data Cleaning
+cols_to_exclude = [
+    "TaxYear",
+    "ImpOnly",
+    "PropType ",
+    "Jurisdiction",
+    "SpecificPropType",
+    "Lat",
+    "Lng",
+    "ReviewedDate",
+    "ImpCode",
+    "Res Imp Count",
+]
+numeric_cols = [
+    c
+    for c in parcel_export.select_dtypes(include=[np.number]).columns
+    if c not in cols_to_exclude
+]
+numeric_parcel_data = parcel_export[numeric_cols].fillna(0)
+
+df_competition = normalize(numeric_parcel_data)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df_competition)
+pca_full = PCA(n_components=13).fit(X_scaled)
+```
+
+# Current Insights (Phase 1)
+
+## The Standard vs. The Luxury {.center}
+:::: {.columns}
+
+::: {.column width="40%"}
+
+```{python}
+# | label: scree-plot
+plt.figure(figsize=(8, 6))
+plt.plot(range(1, 14), pca_full.explained_variance_ratio_.cumsum(), marker="o")
+plt.title("Scree Plot")
+plt.ylabel("Cumulative Variance")
+plt.grid(alpha=0.3)
+plt.show()
+```
+
+:::
+
+::: {.column width="60%"}
+
+```{python}
+# | label: loading-matrix
+loadings = pd.DataFrame(
+    pca_full.components_.T,
+    columns=[f"PC{i + 1}" for i in range(13)],
+    index=df_competition.columns,
+)
+plt.figure(figsize=(10, 6))
+sns.heatmap(loadings.head(10), cmap="RdBu", center=0)
+plt.title("Top 10 Feature Loadings")
+plt.show()
+```
+
+:::
+
+::::
+
+## Sub-Markets {.center}
+
+```{python}
+# | label: ryan-data-engine
+# | include: false
+
+# Load and process sales
+res = pd.read_csv(base_path + "MLS_Residential_Sales.csv").assign(segment="Residential")
+# Logic to merge and trend prices (Abbreviated for performance)
+df_combined = res.copy()  # Simplified for render; replace with full merge logic
+df_combined["Adj_Price"] = df_combined["Sold Price"].fillna(0)
+df_combined["Trended_Price"] = df_combined["Adj_Price"] * 1.05  # Mock trend
+res_df = df_combined.copy()
+
+# UMAP Execution
+res_features = (
+    res_df.select_dtypes(include=[np.number])
+    .drop(columns=["Sold Price"], errors="ignore")
+    .fillna(0)
+)
+res_scaled = StandardScaler().fit_transform(res_features)
+reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
+res_emb_l = reducer.fit_transform(PCA(n_components=5).fit_transform(res_scaled))
+res_l_clusters = hdbscan.HDBSCAN(min_cluster_size=30).fit_predict(res_emb_l)
+```
+
+::: {layout-ncol=2}
+
+```{python}
+# | label: umap-clusters
+plt.figure(figsize=(8, 6))
+plt.scatter(res_emb_l[:, 0], res_emb_l[:, 1], c=res_l_clusters, cmap="tab10", s=5)
+plt.title("Archetype Clusters (Sub-Markets)")
+plt.show()
+```
+
+```{python}
+# | label: price-gradient
+plt.figure(figsize=(8, 6))
+plt.scatter(
+    res_emb_l[:, 0],
+    res_emb_l[:, 1],
+    c=np.log1p(res_df["Sold Price"]),
+    cmap="viridis",
+    s=5,
+)
+plt.title("Price Gradient")
+plt.show()
+```
+
+:::
+
+# Current Insights (Phase 2)
+
+## Prices After Stabalization
+
+```{python}
+# | label: unified_price_adjustment
+# | message: false
+# | warning: false
+
+# 1. Robust Cleaning & Casting
+df_combined["Sold Date"] = pd.to_datetime(df_combined["Sold Date"], errors="coerce")
+df_combined["Adj_Price"] = pd.to_numeric(
+    df_combined["Sold Price"], errors="coerce"
+) - df_combined["Concessions Amount"].fillna(0)
+
+# 2. Filter valid sales and handle Date NaNs
+df_combined = (
+    df_combined[df_combined["Adj_Price"] > 0].dropna(subset=["Sold Date"]).copy()
+)
+
+# 3. Log Transforms for Elasticity
+df_combined["ln_Price"] = np.log(df_combined["Adj_Price"])
+df_combined["ln_GLA"] = np.log(df_combined["Total SqFt"].replace(0, np.nan))
+
+# 4. Global Time Constants
+start_date = pd.Timestamp("2021-01-01")
+lien_date = pd.Timestamp("2026-01-01")  # Your projection target
+x_days = (df_combined["Sold Date"] - start_date).dt.days.values
+
+# 5. Piecewise Fit (3 Segments)
+pw_model = pwlf.PiecewiseLinFit(x_days, df_combined["ln_Price"].values)
+knots_days = pw_model.fit(3)
+knot_dates = [start_date + pd.Timedelta(days=int(k)) for k in knots_days]
+
+# 6. Create Time Buckets (Vectorized where possible)
+for i in range(len(knot_dates) - 1):
+    col_name = f"Time_{i + 1}"
+    start, end = knot_dates[i], knot_dates[i + 1]
+    # Calculate months elapsed within this specific knot segment
+    df_combined[col_name] = df_combined["Sold Date"].apply(
+        lambda x: max(0, (min(x, end) - start).days / 30.44)
+    )
+
+df_combined["Trended_Price"] = df_combined["Adj_Price"].copy()
+time_cols = [c for c in df_combined.columns if c.startswith("Time_")]
+
+# 7. Segment-Specific Trending
+for seg in ["Residential", "Multi-Family", "Land Sales"]:
+    df_seg = df_combined[df_combined["segment"] == seg].copy()
+    if len(df_seg) < 20:
+        continue
+
+    valid_buckets = [col for col in time_cols if df_seg[col].max() > 0]
+    # Use Q() for 'Year Built' because of the space in the name
+    formula = (
+        f"ln_Price ~ {' + '.join(valid_buckets)} + ln_GLA + Q('Year Built')"
+        if seg != "Land Sales"
+        else f"ln_Price ~ {' + '.join(valid_buckets)}"
+    )
+
+    try:
+        res_ols = smf.ols(
+            formula,
+            data=df_seg.dropna(
+                subset=["ln_GLA", "Year Built"] if seg != "Land Sales" else []
+            ),
+        ).fit()
+
+        # Calculate the "Appreciation Gap" between Sale Date and Lien Date
+        adj_log = 0
+        for idx, col in enumerate(time_cols):
+            if col in res_ols.params:
+                # Total months in this segment minus months already passed at sale
+                seg_total_days = (knot_dates[idx + 1] - knot_dates[idx]).days
+                remaining_in_seg = (seg_total_days / 30.44) - df_combined.loc[
+                    df_combined["segment"] == seg, col
+                ]
+                adj_log += res_ols.params[col] * np.maximum(0, remaining_in_seg)
+
+        df_combined.loc[df_combined["segment"] == seg, "Trended_Price"] *= np.exp(
+            adj_log
+        )
+    except Exception as e:
+        print(f"Skipping {seg}: {e}")
+```
+
+```{python}
+# | label: trend_visualization_refined
+# | code-fold: true
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
+
+# Data Preparation
+df_plot = df_combined[
+    (df_combined["segment"] == "Residential") & (df_combined["Total SqFt"] > 100)
+].copy()
+
+# Calculate Unit Prices
+df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot["Total SqFt"]
+df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot["Total SqFt"]
+
+# Outlier Cleaning
+y_limit = df_plot["Price_SqFt_Original"].quantile(0.98)
+df_plot = df_plot[df_plot["Price_SqFt_Original"] < y_limit]
+
+# Numeric conversion for regression plotting
+df_plot["date_num"] = mdates.date2num(df_plot["Sold Date"])
+
+# Plotting
+plt.figure(figsize=(16, 8))
+
+# Original Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Original",
+    scatter_kws={"alpha": 0.1, "color": "gray", "s": 12},
+    line_kws={
+        "color": "#e74c3c",
+        "label": "Original Market (Volatile)",
+        "linewidth": 3,
+    },
+    lowess=True,
+)
+
+# Trended Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Trended",
+    scatter=False,
+    line_kws={
+        "color": "#3498db",
+        "label": f"Trended to {lien_date.date()} (Stabilized)",
+        "linewidth": 4,
+    },
+    lowess=False,
+)
+
+# The Splines
+for s in knot_dates:
+    plt.axvline(
+        mdates.date2num(s), color="black", linestyle="--", alpha=0.2, label="_nolegend_"
+    )
+
+# Formatting for Revealjs
+ax = plt.gca()
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+plt.ylim(0, y_limit)
+plt.title("Residential Housing Market Stabilization", fontsize=22, pad=20)
+plt.ylabel("Price per Square Foot ($)", fontsize=14)
+plt.xlabel("Sale Date", fontsize=14)
+plt.legend(
+    loc="upper left", fontsize=13, frameon=True, facecolor="white", framealpha=0.9
+)
+plt.grid(axis="y", alpha=0.15)
+
+plt.tight_layout()
+plt.show()
+```
+
+## The Current Model
+
+```{python}
+# | label: shap-waterfall-insight
+# | fig-align: center
+
+import shap
+
+# 1. Prepare Data for Random Forest (Residential Only)
+# We exclude "Sold Price" (Target) and "List Price" / "Price_SqFt" (Leaking Features)
+exclude_features = [
+    'ln_Price'
+    "Sold Price",
+    "List Price",
+    "Price_SqFt_Original",
+    "Price_SqFt_Trended",
+    "Adj_Price",
+    "Trended_Price",
+    "segment",
+    "Sold Date",
+]
+
+X = df_combined[df_combined["segment"] == "Residential"].drop(
+    columns=exclude_features, errors="ignore"
+)
+X = X.select_dtypes(include=[np.number]).fillna(0)
+y = df_combined.loc[X.index, "Trended_Price"]
+
+# 2. Train a quick Explainer Model
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42).fit(
+    X_train, y_train
+)
+
+# 3. Generate SHAP Values
+explainer = shap.Explainer(rf_model, X_test)
+shap_values = explainer(X_test)
+
+# 4. Plot a single "Itemized Receipt" (Waterfall) for the first house in the test set
+plt.figure(figsize=(12, 8))
+shap.plots.waterfall(shap_values[0], max_display=10, show=False)
+plt.title("Itemized Valuation: Why is this property worth $X?", fontsize=18, pad=30)
+plt.show()
+```
+
+# The Application
+
+## Vision & Architecture {.center}
+
+Deployment direction discussed in our most recent stakeholder meeting:
+
+-   Beta Version: Scoped to the Commissioner's Office only, preserving data confidentiality without requiring public-facing infrastructure.
+-   Future Version: The office may explore opening access to the public, which would require dedicated data centers and formal security protocols to protect sensitive parcel data.
+
+## Next Steps
+
+- **Phase 2:** Complete model development and validation (target: R² ≥ 0.90)
+- **Phase 3:** Complete UI development for assessor-facing application
+- **Delivery:** Hand off to the Commissioner's Office for beta testing
+
+# Questions?

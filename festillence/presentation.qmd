@@ -325,7 +325,7 @@ res_target = res_df["Trended_Price"]
 - Identification of Feature Interactions: Real estate value is rarely additive. EDA reveals how variables "handshake". An example of this is how the value of a Finished Basement is conditional on the Total GLA of the home.
 - Normalization & Transformation: We identify the need for Log-Scale Transformations. This ensures "Vertical Equity," meaning the model treats a 5% valuation error on a starter home with the same statistical weight as a 5% error on a luxury estate.
 
-## Visual One
+## Residential UMAP
 ::: {layout-ncol=2}
 
 ```{python}
