@@ -15,115 +15,32 @@ execute:
   message: false
 jupyter: python3
 ---
-# Loading and Cleaning
-## Load And Clean
+# Compile Dat
+## Compile
+
+# Data Integration
+## Loading Adjusted Market Data
 
 ```{python}
-# | label: load_data
+#| label: load_data
 import pandas as pd
 import numpy as np
-import statsmodels.formula.api as smf
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.dates as mdates
 
-# Load the already merged and cleaned modeling dataset
-df_combined = pd.read_csv("data/final_data.csv")
+# Pointing to the time-adjusted output from your python script
+df_combined = pd.read_csv("data/final_adjusted.csv")
 
-# Ensure Sold Date is datetime
+# Ensure Sold Date is datetime for plotting
 df_combined["Sold Date"] = pd.to_datetime(df_combined["Sold Date"])
 
-print(f"Total Cleaned Sales Loaded: {len(df_combined)}")
+# Define the target lien date for the visual label
+lien_date = pd.Timestamp("2026-01-01")
+
+print(f"Total Adjusted Sales Loaded: {len(df_combined)}")
 print(f"Segments available: {df_combined['segment'].unique()}")
 ```
-
-# Adjust Prices & Create Time Variables
-
-## Adjust Prices
-
-```{python}
-# | label: unified_price_adjustment
-# | message: false
-# | warning: false
-
-import pandas as pd
-import numpy as np
-import pwlf
-import statsmodels.formula.api as smf
-
-# Initialization and Transformations
-df_combined["Adj_Price"] = df_combined["Sold Price"] - df_combined[
-    "Concessions Amount"
-].fillna(0)
-df_combined = df_combined[df_combined["Adj_Price"] > 0].copy()
-df_combined["ln_Price"] = np.log(df_combined["Adj_Price"])
-
-# Handle GLA zeros before logging to avoid -inf values
-df_combined["ln_GLA"] = np.log(df_combined["Total SqFt"].replace(0, np.nan))
-
-# Timeline and Knot Selection
-start_date = pd.Timestamp("2021-01-01")
-lien_date = pd.Timestamp("2026-01-01")
-x_days = (df_combined["Sold Date"] - start_date).dt.days.values
-
-# Find 3 internal knots (4 segments)
-pw_model = pwlf.PiecewiseLinFit(x_days, df_combined["ln_Price"].values)
-knots_days = pw_model.fit(3)
-knot_dates = [start_date + pd.Timedelta(days=int(k)) for k in knots_days]
-
-# Time Bucket Generation (Vectorized)
-for i in range(len(knot_dates) - 1):
-    col_name = f"Time_{i + 1}"
-    start, end = knot_dates[i], knot_dates[i + 1]
-    # Calculate overlap of sale date with this specific bucket
-    df_combined[col_name] = df_combined["Sold Date"].apply(
-        lambda x: max(0, (min(x, end) - start).days / 30.44) if pd.notna(x) else 0
-    )
-
-# Segmented Trending Loop
-df_combined["Trended_Price"] = df_combined["Adj_Price"].copy()
-time_cols = [c for c in df_combined.columns if c.startswith("Time_")]
-
-for seg in ["Residential", "Multi-Family", "Land Sales"]:
-    df_seg = df_combined[df_combined["segment"] == seg].copy()
-    if len(df_seg) < 20:
-        continue
-
-    valid_buckets = [col for col in time_cols if df_seg[col].max() > 0]
-
-    # Custom formula: Land Sales don't have GLA/Year Built in many datasets
-    if seg != "Land Sales":
-        formula = f"ln_Price ~ {' + '.join(valid_buckets)} + ln_GLA + Q('Year Built')"
-        df_clean = df_seg.dropna(subset=["ln_GLA", "Year Built"])
-    else:
-        formula = f"ln_Price ~ {' + '.join(valid_buckets)}"
-        df_clean = df_seg
-
-    try:
-        res_ols = smf.ols(formula, data=df_clean).fit()
-
-        # Calculate the multiplier to bring the sale forward to 2026
-        adj_log = 0
-        for idx, col in enumerate(time_cols):
-            if col in res_ols.params:
-                # Max months available in this bucket
-                bucket_cap = (knot_dates[idx + 1] - knot_dates[idx]).days / 30.44
-                # Months remaining from sale date to the end of the bucket
-                remaining = (
-                    bucket_cap - df_combined.loc[df_combined["segment"] == seg, col]
-                )
-                adj_log += res_ols.params[col] * np.maximum(0, remaining)
-
-        # Apply the cumulative trend to the origin segment
-        df_combined.loc[df_combined["segment"] == seg, "Trended_Price"] *= np.exp(
-            adj_log
-        )
-    except Exception as e:
-        print(f"Regression failed for {seg}: {e}")
-
-print("Price Trending Complete.")
-```
-
 
 ## Price Adustment Visual
 
@@ -131,27 +48,28 @@ print("Price Trending Complete.")
 # | label: trend_visualization_refined
 # | code-fold: true
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-import matplotlib.dates as mdates
+# Use the standardized SqFt column from the clean script
+sqft_col = "TotGLA" if "TotGLA" in df_combined.columns else "Total SqFt"
 
-# Filter for Residential visualization
+# Filter for Residential visualization (ensure valid SqFt and positive prices)
 df_plot = df_combined[
-    (df_combined["segment"] == "Residential") & (df_combined["Total SqFt"] > 100)
+    (df_combined["segment"] == "Residential") & (df_combined[sqft_col] > 100)
 ].copy()
 
 # Unit Price Calculation
-df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot["Total SqFt"]
-df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot["Total SqFt"]
+# 'Adj_Price' is the original sale minus concessions
+# 'Trended_Price' is that value brought forward to 2026
+df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot[sqft_col]
+df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot[sqft_col]
 
-# Statistical Cleaning for Plotting
+# Statistical Cleaning for Plotting (98th percentile to remove outliers)
 y_limit = df_plot["Price_SqFt_Original"].quantile(0.98)
 df_plot = df_plot[df_plot["Price_SqFt_Original"] < y_limit]
 df_plot["date_num"] = mdates.date2num(df_plot["Sold Date"])
 
 plt.figure(figsize=(16, 8))
 
-# Volatile Original Market
+# Volatile Original Market (Lowess curve for localized trends)
 sns.regplot(
     data=df_plot,
     x="date_num",
@@ -159,7 +77,7 @@ sns.regplot(
     scatter_kws={"alpha": 0.1, "color": "gray", "s": 12},
     line_kws={
         "color": "#e74c3c",
-        "label": "Original Market (Volatile)",
+        "label": "Original Market (Historical)",
         "linewidth": 3,
     },
     lowess=True,
@@ -173,184 +91,131 @@ sns.regplot(
     scatter=False,
     line_kws={
         "color": "#3498db",
-        "label": f"Trended to {lien_date.date()} (Stabilized)",
+        "label": f"Trended/Stabilized to {lien_date.date()}",
         "linewidth": 4,
     },
     lowess=False,
 )
-
-# Render Inflection Knots
-for s in knot_dates:
-    plt.axvline(mdates.date2num(s), color="black", linestyle="--", alpha=0.2)
 
 # Formatting
 ax = plt.gca()
 ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
 plt.ylim(0, y_limit)
 plt.title("Residential Housing Market Stabilization", fontsize=22, pad=20)
-plt.ylabel("Price per Square Foot ($)", fontsize=14)
 plt.xlabel("Sale Date", fontsize=14)
-plt.legend(
-    loc="upper left", fontsize=13, frameon=True, facecolor="white", framealpha=0.9
+plt.ylabel("Price per Square Foot ($)", fontsize=14)
+plt.legend(loc="upper left", fontsize=13)
+plt.tight_layout()
+plt.show()
+```
+
+## Sample MLR
+
+```{python}
+# | label: auto_MLR_no_leakage
+import statsmodels.formula.api as smf
+import numpy as np
+
+# Updated list to include the "Cheating" variables
+cols_to_remove = [
+    "Time_1",
+    "Time_2",
+    "Time_3",
+    "Time_4",
+    "Time_5",
+    "Trended_Price",
+    "Sold Date",
+    "Concessions Amount",
+    "segment",
+    "Age",
+    "Sold Price",
+    "ln_Price",
+    "ln_GLA",  # Added these to stop the leakage
+]
+
+df_mlr = (
+    df_combined[df_combined["segment"] == "Residential"]
+    .drop(columns=[c for c in cols_to_remove if c in df_combined.columns])
+    .copy()
 )
-plt.grid(axis="y", alpha=0.15)
+
+# Prune columns that are mostly empty
+threshold = len(df_mlr) * 0.5
+killer_cols = df_mlr.columns[df_mlr.count() < threshold].tolist()
+df_mlr = df_mlr.drop(columns=killer_cols)
+
+df_mlr = df_mlr.dropna()
+
+if not df_mlr.empty:
+    target = "Adj_Price"
+    features = []
+
+    for col in df_mlr.columns:
+        if col == target:
+            continue
+
+        if col == "NbhdCode2":
+            if df_mlr[col].nunique() > 1:
+                features.append("C(NbhdCode2)")
+        elif col in ["TotGLA", "Total SqFt"]:
+            features.append(f"np.log(Q('{col}'))")
+        elif np.issubdtype(df_mlr[col].dtype, np.number):
+            if df_mlr[col].std() > 0:
+                features.append(f"Q('{col}')")
+
+    formula = f"np.log({target}) ~ {' + '.join(features)}"
+
+    try:
+        model = smf.ols(formula, data=df_mlr).fit()
+        print(model.summary())
+    except Exception as e:
+        print(f"Model failed: {e}")
+```
+
+## Diagnostic Plots
+
+```{python}
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+# 1. Residuals vs Fitted (Checks for non-linearity & heteroscedasticity)
+# 2. Normal Q-Q (Checks if residuals are normally distributed)
+# 3. Scale-Location (Checks for constant variance/homoscedasticity)
+# 4. Residuals vs Leverage (Checks for influential outliers)
+
+residuals = model.resid
+fitted = model.fittedvalues
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+# Residuals vs Fitted
+sns.residplot(
+    x=fitted,
+    y=df_mlr["Adj_Price"],
+    lowess=True,
+    ax=axes[0, 0],
+    line_kws={"color": "red", "lw": 1},
+)
+axes[0, 0].set_title("Residuals vs Fitted")
+axes[0, 0].set_xlabel("Fitted values")
+axes[0, 0].set_ylabel("Residuals")
+
+# Normal Q-Q
+sm.qqplot(residuals, line="45", fit=True, ax=axes[0, 1])
+axes[0, 1].set_title("Normal Q-Q")
+
+# Scale-Location
+sns.scatterplot(x=fitted, y=np.sqrt(np.abs(residuals)), ax=axes[1, 0])
+axes[1, 0].set_title("Scale-Location")
+axes[1, 0].set_xlabel("Fitted values")
+axes[1, 0].set_ylabel("sqrt(abs(Residuals))")
+
+# Residuals vs Leverage
+sm.graphics.influence_plot(model, criterion="cooks", ax=axes[1, 1])
+axes[1, 1].set_title("Residuals vs Leverage")
 
 plt.tight_layout()
 plt.show()
 ```
 
-## MLR
-
-
-```{python}
-# | label: mlr
-import statsmodels.formula.api as smf
-
-# Filter for Residential to keep the physical coefficients meaningful
-df_mlr = df_combined[df_combined["segment"] == "Residential"].copy()
-df_mlr = df_mlr.dropna(subset=["Trended_Price", "Total SqFt", "Year Built", "NbhdCode"])
-
-# Log-Linear Model Formula
-formula = "np.log(Trended_Price) ~ ln_GLA + Q('Year Built') + Q('Total Bedrooms') + Q('Full Baths') + C(NbhdCode)"
-
-# Fit the Ordinary Least Squares (OLS) model
-model_res = smf.ols(formula, data=df_mlr).fit()
-
-# Display the regression results
-print(model_res.summary())
-```
-
-## Diagnostic Plots
-```{python}
-# | label: diagnostic_plots
-# | fig-align: center
-import matplotlib.pyplot as plt
-import scipy.stats as stats
-import seaborn as sns
-
-# Create a wide horizontal canvas for the two-panel layout
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
-
-# Residuals vs Fitted: Testing for Homoscedasticity
-# Uses a LOWESS smoother to track the mean error trend
-sns.residplot(
-    x=model_res.fittedvalues,
-    y=model_res.resid,
-    lowess=True,
-    ax=ax1,
-    scatter_kws={"alpha": 0.15, "s": 25, "color": "gray"},
-    line_kws={"color": "#e74c3c", "lw": 4},
-)
-ax1.axhline(0, color="black", linestyle="--", alpha=0.5)
-ax1.set_title("Residuals vs. Fitted (Error Variance)", fontsize=20, pad=15)
-ax1.set_xlabel("Predicted Log Price", fontsize=14)
-ax1.set_ylabel("Residual (Error)", fontsize=14)
-
-# Normal Q-Q Plot: Testing the Gaussian assumption of OLS
-# Deviations at the ends indicate 'Fat Tails' in the market data
-stats.probplot(model_res.resid, dist="norm", plot=ax2)
-ax2.get_lines()[0].set_markerfacecolor("gray")
-ax2.get_lines()[0].set_alpha(0.15)
-ax2.get_lines()[1].set_color("#3498db")
-ax2.get_lines()[1].set_linewidth(4)
-ax2.set_title("Normal Q-Q Plot (Error Distribution)", fontsize=20, pad=15)
-ax2.set_xlabel("Theoretical Quantiles", fontsize=14)
-ax2.set_ylabel("Sample Quantiles", fontsize=14)
-
-plt.tight_layout(pad=4.0)
-plt.show()
-```
-
-## Improving Model Robustness: Strategic Outlier Trimming
-
-To address the **extreme kurtosis (351.2)** and heavy tails identified in the diagnostic plots, we applied a **statistical trim** to the data, filtering out transactions outside the typical residential market range (0.5% and 99.5% of prices).
-
-This action removes distressed sales and extreme luxury estates, allowing the model to focus on the standard housing stock that OLS is best suited to model.
-
-```{python}
-# | label: outlier_trimming
-# | echo: true
-import statsmodels.formula.api as smf
-import pandas as pd
-import numpy as np
-
-# Apply a statistical 'trim' to isolate the typical market
-# Removes the most extreme 1% of transactions (0.5% on each tail)
-price_lower = df_mlr['Trended_Price'].quantile(0.005)
-price_upper = df_mlr['Trended_Price'].quantile(0.995)
-
-df_trimmed = df_mlr[
-    (df_mlr['Trended_Price'] > price_lower) & 
-    (df_mlr['Trended_Price'] < price_upper)
-].copy()
-
-# Re-run the Log-Linear OLS Model on the cleaned dataset
-formula = "np.log(Trended_Price) ~ ln_GLA + Q('Year Built') + Q('Full Baths') + C(NbhdCode)"
-model_clean = smf.ols(formula, data=df_trimmed).fit()
-
-# Define labels for the comparison table
-model_stats = pd.DataFrame({
-    'Metric': ['Observations', 'R-squared', 'Kurtosis', 'ln_GLA (Coef)', 'ln_GLA (P-value)'],
-    'Original Model': [
-        f"{model_res.nobs:.0f}", 
-        f"{model_res.rsquared:.3f}", 
-        "351.2", # Kurtosis from your previous output
-        f"{model_res.params['ln_GLA']:.4f}",
-        f"{model_res.pvalues['ln_GLA']:.4f}"
-    ],
-    'Trimmed Model': [
-        f"{model_clean.nobs:.0f}", 
-        f"{model_clean.rsquared:.3f}", 
-        "Pending", # You will need to calculate this (see below)
-        f"{model_clean.params['ln_GLA']:.4f}",
-        f"{model_clean.pvalues['ln_GLA']:.4f}"
-    ]
-})
-
-# To get the new Kurtosis number:
-from scipy.stats import kurtosis
-kurt_new = kurtosis(model_clean.resid, fisher=True)
-print(f"New Residual Kurtosis: {kurt_new}")
-```
-
-## New Model
-
-```{python}
-# | label: trimmed_mlr_vif
-# | echo: true
-
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-import statsmodels.api as sm
-
-# Final Trimmed Model Run
-formula = "np.log(Trended_Price) ~ ln_GLA + Q('Year Built') + Q('Full Baths') + Q('Total Bedrooms')"
-model_final = smf.ols(formula, data=df_trimmed).fit()
-
-# Calculate VIF
-X = model_final.model.exog
-vif_data = pd.DataFrame()
-vif_data["Variable"] = model_final.model.exog_names
-vif_data["VIF"] = [variance_inflation_factor(X, i) for i in range(X.shape[1])]
-
-# Filter out the Intercept and Neighborhood dummies for a cleaner view
-vif_summary = vif_data[~vif_data["Variable"].str.contains("NbhdCode|Intercept")]
-
-print(model_final.summary())
-print("\n--- Variance Inflation Factors (VIF) ---")
-print(vif_summary.round(2))
-```
-
-## Final
-
-```{python}
-# | label: final_consolidated_mlr
-
-# Re-adding Neighborhoods to the formula
-formula = "np.log(Trended_Price) ~ ln_GLA + Q('Year Built') + Q('Full Baths') + Q('Total Bedrooms') + C(NbhdCode)"
-
-model_final = smf.ols(formula, data=df_trimmed).fit()
-
-print(f"Final Observations: {model_final.nobs}")
-print(f"Final R-Squared: {model_final.rsquared:.4f}")
-print(model_final.summary())
-```

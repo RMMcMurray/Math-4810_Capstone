@@ -1,17 +1,25 @@
 import pandas as pd
 
-files = {"PUMA": "data/PUMA2.csv", "Area_Code": "data/area_code.xlsx"}
+# Define the file paths
+files = {
+    "Residential": "data/MLS_Residential_Sales.csv",
+    "Multi-Family": "data/Multi-Family_MLS_Export.csv",
+    "Land Sales": "data/MLS_Land_Sales.csv",
+    "PUMA": "data/final_puma.csv",
+}
 
-for name, path in files.items():
+print("--- CSV Column Manifest ---")
+
+for label, path in files.items():
     try:
-        if "xlsx" in path:
-            df = pd.read_excel(path, nrows=0)
-        else:
-            df = pd.read_csv(path, nrows=0)
+        # Load only the header row to be fast
+        df = pd.read_csv(path, nrows=0)
 
-        print(f"--- {name} Columns ---")
-        print(df.columns.tolist())
-        print("\n")
+        print(f"\n{label.upper()} ({path})")
+        print(f"Total Columns: {len(df.columns)}")
+        print(list(df.columns))
+
     except Exception as e:
-        print(f"--- Error loading {name} ---")
-        print(e)
+        print(f"\nCould not read {label}: {e}")
+
+print("\n--- End of Manifest ---")
