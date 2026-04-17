@@ -642,6 +642,130 @@ We discussed three distinct architectures to determine which could best model th
 
 3. Gradient Boosting Trees are built sequentially. Each new tree specifically targets the "errors" of the previous one to minimize the Mean Absolute Error. Gradient Boosting is very precise. It pushes the $R^2$ to its mathematical limit by refining the model's focus on outliers.
 
+```{python}
+#| label: random_forest
+#| include: false
+#| message: false
+#| warning: false
+#| cache: true
+
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+
+# --- DATA PREP ---
+res_target_log = np.log1p(res_df["Sold Price"])
+
+# --- MODELING FUNCTIONS ---
+def run_log_rf(df_features, target_log, cluster_labels, title):
+    # Feature Prep: Combine physical features with UMAP Clusters
+    X = df_features.select_dtypes(include=[np.number]).copy()
+    X["Cluster"] = cluster_labels
+
+    # One-Hot Encode Clusters so the model treats them as categories, not numbers
+    X = pd.get_dummies(X, columns=["Cluster"], prefix="C").fillna(0)
+
+    # Split
+    X_train, X_test, y_train_log, y_test_log = train_test_split(
+        X, target_log, test_size=0.2, random_state=42
+    )
+
+    # Train
+    rf = RandomForestRegressor(n_estimators=100, n_jobs=-1, random_state=42)
+    rf.fit(X_train, y_train_log)
+
+    # Predict & Evaluation
+    y_pred_log = rf.predict(X_test)
+    y_test_dollars = np.expm1(y_test_log)  # Convert log back to actual $
+    y_pred_dollars = np.expm1(y_pred_log)
+
+    mae_dollars = mean_absolute_error(y_test_dollars, y_pred_dollars)
+    r2 = r2_score(y_test_log, y_pred_log)
+
+    # Performance Plot
+    plt.figure(figsize=(10, 6))
+    plt.scatter(y_test_log, y_pred_log, alpha=0.4, color="#2c3e50")
+    plt.plot(
+        [y_test_log.min(), y_test_log.max()],
+        [y_test_log.min(), y_test_log.max()],
+        "r--",
+        lw=2,
+    )
+    plt.title(f"{title} Performance\nR² = {r2:.2f} | Avg Error = ${mae_dollars:,.0f}")
+    plt.xlabel("Actual Value (Log)")
+    plt.ylabel("Predicted Value (Log)")
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    return rf, X_train, X_test, y_train_log, y_test_log
+
+
+# random forest
+res_model, res_X_train, res_X_test, res_y_train, res_y_test = run_log_rf(
+    res_features, res_target_log, res_l_clusters, "Residential Model"
+)
+
+```
+
+## Feature Importance
+
+```{python}
+# | label: feature_importance_display
+# | echo: false
+
+def get_feature_importance_table(model, X_train, title):
+    """Returns a table of the top 5 most influential features for the model."""
+    importances = model.feature_importances_
+    feature_names = X_train.columns
+
+    feat_df = (
+        pd.DataFrame({"Feature": feature_names, "Importance (%)": importances * 100})
+        .sort_values(by="Importance (%)", ascending=False)
+        .head(5)
+    )
+
+    feat_df["Dataset"] = title
+    return feat_df
+
+res_feat_table = get_feature_importance_table(res_model, res_X_train, "Residential")
+res_feat_table[["Feature", "Importance (%)"]]
+
+plt.figure(figsize=(10, 5))
+sns.barplot(data=res_feat_table, x="Importance (%)", y="Feature", palette="viridis")
+plt.title("Top 5 Value Drivers (Residential Model)")
+plt.show()
+```
+
+## Waterfall Plot
+
+```{python}
+# | label: shap_waterfall
+# | fig-align: center
+
+import shap
+
+explainer = shap.TreeExplainer(res_model)
+
+# Calculate SHAP values for the test set
+shap_values = explainer(res_X_test)
+
+# Select a specific property to explain
+plt.figure(figsize=(12, 8))
+shap.plots.waterfall(shap_values[0], max_display=10, show=False)
+
+plt.title("Property Valuation: Individual Feature Contribution", fontsize=16, pad=20)
+plt.show()
+
+
+## Model Selection & Strategy
+We discussed three distinct architectures to determine which could best model the Iron County real estate.
+
+1. Elastic Net: A hybrid of Lasso and Ridge regression. It handles it handles overlapping variables by penalizing redundant variables. It is excellent for transparency, but struggles with the "curvy" non-linear nature of modern market shifts.
+
+2. Random Forest Trains 100+ independent decision trees on random subsets of data and averages their "votes." It captures feature fnteractions. It understands that a "3rd Garage Bay" adds more value to a luxury ranch than to a high-density efficiency unit.
+
+3. Gradient Boosting Trees are built sequentially. Each new tree specifically targets the "errors" of the previous one to minimize the Mean Absolute Error. Gradient Boosting is very precise. It pushes the $R^2$ to its mathematical limit by refining the model's focus on outliers.
+
 # The Application
 
 ## Vision & Architecture {.center}
