@@ -18,6 +18,23 @@ impute_zero_cols = [
     "CarportCapacity",
     "GarageArea",
     "GarageCapacity",
+    "Tot Bsmt",
+    "SqFt_DetGarage",
+    "Count_ DetCarport",
+    "SqFt_DetCarport",
+    "Count_Barn",
+    "Sqft_Barn",
+    "Count_Guest_House",
+    "SqFt_Guest_House",
+    "Count_Pools",
+    "SqFt_Pools",
+    "Count_Recreational_Courts",
+    "SqFt_Recreational_Courts",
+    "Count_Shed",
+    "SqFt_Shed",
+    "Count_Gazebo_Pavilion",
+    "SqFt_Gazebo_Pavilion",
+    "Count_DetGarage",
 ]
 
 for col in impute_zero_cols:
@@ -105,6 +122,7 @@ cols_to_drop = [
     "RecordType",
     "SpecificPropType",
     "Main_YearBuilt",
+    "Age"
 ]
 
 # --- MARKET STABILIZATION & OUTLIER HANDLING ---

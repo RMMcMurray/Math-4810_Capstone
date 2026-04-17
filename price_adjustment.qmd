@@ -123,14 +123,14 @@ cols_to_remove = [
     "Time_3",
     "Time_4",
     "Time_5",
-    "Trended_Price",
     "Sold Date",
     "Concessions Amount",
     "segment",
     "Age",
     "Sold Price",
     "ln_Price",
-    "ln_GLA",  # Added these to stop the leakage
+    "ln_GLA", 
+    "Adj_Price"
 ]
 
 df_mlr = (
@@ -147,7 +147,7 @@ df_mlr = df_mlr.drop(columns=killer_cols)
 df_mlr = df_mlr.dropna()
 
 if not df_mlr.empty:
-    target = "Adj_Price"
+    target = "Trended_Price"
     features = []
 
     for col in df_mlr.columns:
@@ -175,24 +175,21 @@ if not df_mlr.empty:
 ## Diagnostic Plots
 
 ```{python}
+# | label: diagnostic_plots
 import matplotlib.pyplot as plt
 import seaborn as sns
 import statsmodels.api as sm
 
-# 1. Residuals vs Fitted (Checks for non-linearity & heteroscedasticity)
-# 2. Normal Q-Q (Checks if residuals are normally distributed)
-# 3. Scale-Location (Checks for constant variance/homoscedasticity)
-# 4. Residuals vs Leverage (Checks for influential outliers)
-
+# Use the residuals and fitted values from your 'model'
 residuals = model.resid
 fitted = model.fittedvalues
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-# Residuals vs Fitted
+# Residuals vs Fitted (Corrected: y should be residuals)
 sns.residplot(
     x=fitted,
-    y=df_mlr["Adj_Price"],
+    y=residuals,
     lowess=True,
     ax=axes[0, 0],
     line_kws={"color": "red", "lw": 1},
