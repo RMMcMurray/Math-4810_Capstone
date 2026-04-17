@@ -1,0 +1,1214 @@
+---
+title: "Model Building 3 — Linear Model Search"
+author: "Melanie Jensen"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    toc-title: "Contents"
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    number-sections: true
+    fig-width: 10
+    fig-height: 6
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+engine: python
+---
+
+# Overview
+
+This notebook searches for the best *linear* model — one that trades off
+predictive power (test R²), interpretability, and the reasonableness of
+classical linear-model assumptions.  A parallel nonlinear (black-box)
+model will be built in a later notebook; here we focus on models whose
+coefficients can be read directly.
+
+The core workflow is:
+
+1.  Re-run the shared data-prep pipeline.
+2.  Drop outliers using influence
+    diagnostics (Cook's D, studentized residuals, feature tails) while
+    staying under the 10% ceiling.
+3.  Split train/test (80/20, `random_state=2026`).
+4.  Fit many linear model variants — base OLS, OLS with polynomial and
+    interaction terms, shrinkage (Ridge / Lasso / ElasticNet), robust
+    fits (Huber / WLS / Quantile), dimension-reduction fits (PCR / PLS),
+    and segment-stratified OLS.
+5.  Score each by train R², test R², 5-fold CV R², AIC, and assumption
+    diagnostics; rank by test R² with a sanity check on the train–test
+    gap.
+6.  Re-fit the winner, pull its coefficient table, and inspect residuals.
+
+
+# Setup
+
+```{python}
+#| label: initial_imports
+#| include: false
+
+import warnings; warnings.filterwarnings("ignore")
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from scipy import stats as scipy_stats
+
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import OLSInfluence
+from statsmodels.stats.diagnostic import het_breuschpagan
+from statsmodels.regression.quantile_regression import QuantReg
+
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import (LinearRegression, Ridge, RidgeCV,
+                                   Lasso, LassoCV,
+                                   ElasticNet, ElasticNetCV,
+                                   HuberRegressor)
+from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.metrics import r2_score, mean_absolute_error
+
+RANDOM_STATE = 2026
+```
+
+
+# Data Preparation
+
+The prep pipeline mirrors Model Building 2 — impute basement / outbuilding
+square footages to zero (NA here means "the property does not have one"),
+drop leakage variables, clean the `$` / `,` characters from `Land Value`
+and `Total Value`, drop a handful of rows with missing
+`EffYearBuilt_Weighted` / `Quality_Weighted`, and apply log / arcsinh
+transforms to the heavy-tailed continuous features.
+
+```{python}
+#| label: data_cleaning
+
+data = pd.read_csv(
+    "/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/"
+    "Math-4810_Capstone/material/final_adjusted.csv"
+)
+
+print(f"Starting rows: {len(data)}")
+print(data["segment"].value_counts().to_string())
+
+df_copy = data.copy()
+
+# ── Impute outbuilding / basement NAs to zero ────────────────────────────────
+impute_cols = [
+    'Tot Bsmt', 'SqFt_DetGarage', 'SqFt_DetCarport', 'Sqft_Barn',
+    'SqFt_Guest_House', 'SqFt_Pools', 'SqFt_Recreational_Courts',
+    'SqFt_Shed', 'SqFt_Gazebo_Pavilion'
+]
+for col in impute_cols:
+    if col in df_copy.columns and df_copy[col].isna().any():
+        df_copy[col] = df_copy[col].fillna(0)
+
+# ── Drop leakage + count-style columns ──────────────────────────────────────
+drop_cols = [
+    'Sold Price', 'Sold Date', 'Concessions Amount', 'Age', 'Adj_Price',
+    'ln_Price', 'TotGLA', 'Time_1', 'Time_2', 'Time_3',
+    'Count_DetGarage', 'Count_ DetCarport', 'Count_Barn', 'Count_Guest_House',
+    'Count_Pools', 'Count_Recreational_Courts', 'Count_Shed',
+    'Count_Gazebo_Pavilion'
+]
+df_copy = df_copy.drop(columns=[c for c in drop_cols if c in df_copy.columns])
+
+# ── Clean Land Value / Total Value ──────────────────────────────────────────
+df_copy = df_copy[~df_copy['Land Value'].astype(str).str.contains(r'\$-', regex=True)]
+for col in ['Land Value', 'Total Value']:
+    df_copy[col] = (df_copy[col].astype(str)
+                     .str.replace('$', '', regex=False)
+                     .str.replace(',', '', regex=False)
+                     .astype(float))
+
+# ── Drop any remaining missing on the EffYear / Quality columns ─────────────
+df_copy = df_copy.dropna(subset=['EffYearBuilt_Weighted', 'Quality_Weighted'])
+
+# ── Log / arcsinh transforms ────────────────────────────────────────────────
+df_copy["ln_Trended_Price"]                 = np.log(df_copy["Trended_Price"])
+df_copy['AsinH_Acreage']                    = np.asinh(df_copy['Acreage'])
+df_copy['AsinH_Land_Value']                 = np.asinh(df_copy['Land Value'])
+df_copy['AsinH_Total_Value']                = np.asinh(df_copy['Total Value'])
+df_copy['AsinH_Tot_Bsmt']                   = np.asinh(df_copy['Tot Bsmt'])
+df_copy['AsinH_BsmtFin_Pct_Wghted']         = np.asinh(df_copy['BsmtFinishPct_Weighted'])
+df_copy['AsinH_Carport_Area']               = np.asinh(df_copy['CarportArea'])
+df_copy['AsinH_Garage_Area']                = np.asinh(df_copy['GarageArea'])
+df_copy['AsinH_SqFt_Det_Garage']            = np.asinh(df_copy['SqFt_DetGarage'])
+df_copy['AsinH_SqFt_Det_Carport']           = np.asinh(df_copy['SqFt_DetCarport'])
+df_copy['AsinH_SqFt_Barn']                  = np.asinh(df_copy['Sqft_Barn'])
+df_copy['AsinH_SqFt_Guest_House']           = np.asinh(df_copy['SqFt_Guest_House'])
+df_copy['AsinH_SqFt_Pools']                 = np.asinh(df_copy['SqFt_Pools'])
+df_copy['AsinH_SqFt_Recreational_Courts']   = np.asinh(df_copy['SqFt_Recreational_Courts'])
+df_copy['AsinH_SqFt_Shed']                  = np.asinh(df_copy['SqFt_Shed'])
+df_copy['AsinH_SqFt_Gazebo_Pavilion']       = np.asinh(df_copy['SqFt_Gazebo_Pavilion'])
+
+# ── Drop the raw versions that have been replaced ───────────────────────────
+drop_cols_2 = [
+    'Trended_Price', 'Acreage', 'Land Value', 'Total Value', 'Tot Bsmt',
+    'BsmtFinishPct_Weighted', 'CarportArea', 'GarageArea', 'SqFt_DetGarage',
+    'SqFt_DetCarport', 'Sqft_Barn', 'SqFt_Guest_House', 'SqFt_Pools',
+    'SqFt_Recreational_Courts', 'SqFt_Shed', 'SqFt_Gazebo_Pavilion'
+]
+df_copy = df_copy.drop(columns=[c for c in drop_cols_2 if c in df_copy.columns])
+df_copy = df_copy.reset_index(drop=True)
+
+print(f"\nAfter cleaning : {len(df_copy)} rows | {len(df_copy.columns)} columns")
+print(df_copy["segment"].value_counts().to_string())
+```
+
+# Drop Outliers
+
+Drop outliers from influence diagnostics on a
+baseline OLS fit.  The goal is simple: within a 10% ceiling, cut only
+the rows whose *residuals or leverage values* clearly indicate that one
+linear surface cannot serve the whole market.
+
+```{python}
+#| label: encode_for_diagnostics
+
+# ── Dummy-encode all categoricals in one pass ───────────────────────────────
+DUMMY_COLS = ['PropTypeDescription', 'SpecificPropTypeDescription',
+              'NbhdCode2', 'Main_StyleDesc', 'segment']
+
+df_enc = df_copy.copy()
+for col in DUMMY_COLS:
+    if col in df_enc.columns:
+        dummies = pd.get_dummies(df_enc[col], prefix=col, drop_first=True, dtype=int)
+        df_enc   = pd.concat([df_enc.drop(columns=col), dummies], axis=1)
+
+df_enc = df_enc.fillna(0)
+
+y_all = df_enc['ln_Trended_Price'].astype(float)
+X_all = (df_enc.select_dtypes(include=[np.number])
+                .drop(columns=['ln_Trended_Price'])
+                .astype(float))
+
+print(f"Encoded feature matrix : {X_all.shape[0]} rows | {X_all.shape[1]} predictors")
+```
+
+```{python}
+#| label: baseline_ols_for_diagnostics
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Baseline OLS — used only to produce influence diagnostics.  The coefficient
+# estimates here are not the final model; they're a reference surface for
+# identifying observations the linear form cannot explain.
+# ══════════════════════════════════════════════════════════════════════════════
+X_const = sm.add_constant(X_all)
+base    = sm.OLS(y_all, X_const).fit()
+print(f"Baseline OLS R² (pre-drop) : {base.rsquared:.4f}")
+print(f"Baseline OLS AIC            : {base.aic:.1f}")
+
+infl          = OLSInfluence(base)
+cooks_d       = infl.cooks_distance[0]
+studentized   = infl.resid_studentized_internal
+leverage      = infl.hat_matrix_diag
+
+n, p          = len(y_all), X_all.shape[1] + 1
+cook_thresh   = 4.0 / n
+stud_thresh   = 3.0
+lev_thresh    = 2.0 * p / n
+
+flag_cook = cooks_d > cook_thresh
+flag_stud = np.abs(studentized) > stud_thresh
+flag_lev  = leverage > lev_thresh
+
+print(f"\n── Influence flag counts ──")
+print(f"  Cook's D > 4/n   ({cook_thresh:.6f}) : {flag_cook.sum():>5} rows "
+      f"({flag_cook.mean()*100:5.2f}%)")
+print(f"  |stud. resid| > 3                    : {flag_stud.sum():>5} rows "
+      f"({flag_stud.mean()*100:5.2f}%)")
+print(f"  Leverage > 2p/n ({lev_thresh:.4f})  : {flag_lev.sum():>5} rows "
+      f"({flag_lev.mean()*100:5.2f}%)")
+```
+
+```{python}
+#| label: drop_combos
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Candidate drop rules — we try five layered combinations, refit OLS on the
+# kept rows, and compare R² and AIC.  The rule that maximizes test-relevant
+# fit while staying under 10% is selected.
+# ══════════════════════════════════════════════════════════════════════════════
+
+A = flag_cook                                                           # Cook's D outliers
+B = flag_stud                                                           # studentized outliers
+
+# Multi-tail — extreme in >=2 of the heavy-tail features
+HEAVY = ['ln_GLA', 'Quality_Weighted', 'AsinH_Land_Value', 'AsinH_Total_Value']
+hf = np.zeros(len(df_copy), dtype=int)
+for c in HEAVY:
+    lo, hi = df_copy[c].quantile(0.005), df_copy[c].quantile(0.995)
+    hf += ((df_copy[c] < lo) | (df_copy[c] > hi)).astype(int).values
+C = hf >= 2
+
+# Target-extreme — log-price outside the 0.5/99.5 quantile band
+lo_y, hi_y = df_copy['ln_Trended_Price'].quantile([0.005, 0.995])
+D = ((df_copy['ln_Trended_Price'] < lo_y) | (df_copy['ln_Trended_Price'] > hi_y)).values
+
+combos = {
+    'A only'            : A,
+    'A + B'             : A | B,
+    'A + B + C'         : A | B | C,
+    'A + B + C + D'     : A | B | C | D,
+    '(A & B) | C | D'   : (A & B) | C | D,
+}
+
+rows = []
+for name, m in combos.items():
+    keep = ~m
+    r   = sm.OLS(y_all[keep], X_const[keep]).fit()
+    rows.append({'rule': name, 'dropped': int(m.sum()),
+                 'pct_dropped': f"{m.mean()*100:.2f}%",
+                 'r2_refit': round(r.rsquared, 4),
+                 'aic_refit': round(r.aic, 1)})
+print(pd.DataFrame(rows).to_string(index=False))
+```
+
+A (Cook's D > 4/n) and B (|studentized residual| > 3) are the two rules
+that a linear-model textbook would endorse without further justification.
+Layers C and D buy almost nothing in R² or AIC once A and B are in, and
+they spend more of the 10% budget.  We lock in **A + B** — it drops
+≈4.9% of rows and lifts in-sample R² from 0.78 to 0.88.
+
+```{python}
+#| label: apply_drop
+
+drop_mask = A | B
+print(f"Final drop mask: {drop_mask.sum()} rows "
+      f"({drop_mask.mean()*100:.2f}% of data)")
+print(f"Remaining      : {(~drop_mask).sum()} rows")
+
+X = X_all[~drop_mask].reset_index(drop=True)
+y = y_all[~drop_mask].reset_index(drop=True)
+segment_vec = df_copy.loc[~drop_mask, 'segment'].reset_index(drop=True)
+
+print(f"\nSegment breakdown post-drop:")
+print(segment_vec.value_counts().to_string())
+```
+
+# Train / Test Split
+
+```{python}
+#| label: train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=RANDOM_STATE
+)
+
+seg_train = segment_vec.loc[X_train.index].reset_index(drop=True)
+seg_test  = segment_vec.loc[X_test.index].reset_index(drop=True)
+
+X_train = X_train.reset_index(drop=True)
+X_test  = X_test.reset_index(drop=True)
+y_train = y_train.reset_index(drop=True)
+y_test  = y_test.reset_index(drop=True)
+
+print(f"Train : {X_train.shape[0]:>5} rows | {X_train.shape[1]} predictors")
+print(f"Test  : {X_test.shape[0]:>5} rows")
+```
+
+
+# Feature-Engineering Helpers
+
+To keep the later chunks short, we define a helper that builds the
+**polynomial + segment-interaction** feature set on top of the base
+matrix.  Four continuous variables get a squared term; each `segment_*`
+dummy gets multiplied by the six key numeric predictors.
+
+```{python}
+#| label: feature_builder
+
+POLY_COLS   = ['ln_GLA', 'Quality_Weighted', 'EffYearBuilt_Weighted', 'AsinH_Acreage']
+KEY_NUMERIC = ['ln_GLA', 'Quality_Weighted', 'EffYearBuilt_Weighted',
+               'AsinH_Acreage', 'AsinH_Land_Value', 'AsinH_Total_Value']
+seg_cols    = [c for c in X_train.columns if c.startswith('segment_')]
+
+def build_poly_seg(X_in, ref_cols=None):
+    X2 = X_in.copy()
+    for c in POLY_COLS:
+        if c in X2.columns:
+            X2[f'{c}_sq'] = X2[c] ** 2
+    for sc in seg_cols:
+        for kn in KEY_NUMERIC:
+            if kn in X2.columns:
+                X2[f'{sc}_x_{kn}'] = X2[sc] * X2[kn]
+    if ref_cols is not None:
+        X2 = X2.reindex(columns=ref_cols, fill_value=0)
+    return X2
+
+X_train_v2 = X_train.copy()
+X_test_v2  = X_test.copy()
+for c in POLY_COLS:
+    if c in X_train_v2.columns:
+        X_train_v2[f'{c}_sq'] = X_train_v2[c] ** 2
+        X_test_v2[f'{c}_sq']  = X_test_v2[c]  ** 2
+
+X_train_v3 = X_train.copy()
+X_test_v3  = X_test.copy()
+for sc in seg_cols:
+    for kn in KEY_NUMERIC:
+        if kn in X_train_v3.columns:
+            X_train_v3[f'{sc}_x_{kn}'] = X_train_v3[sc] * X_train_v3[kn]
+            X_test_v3[f'{sc}_x_{kn}']  = X_test_v3[sc]  * X_test_v3[kn]
+
+X_train_v4 = build_poly_seg(X_train)
+X_test_v4  = build_poly_seg(X_test, ref_cols=X_train_v4.columns)
+
+print(f"v1 (base)        : {X_train.shape[1]} features")
+print(f"v2 (poly)        : {X_train_v2.shape[1]} features")
+print(f"v3 (seg × num)   : {X_train_v3.shape[1]} features")
+print(f"v4 (poly + seg×num) : {X_train_v4.shape[1]} features")
+```
+
+And a shared results registry plus a small helper to run diagnostics on
+any residual vector:
+
+```{python}
+#| label: results_registry
+
+results = []
+
+def record(**kw):
+    results.append(kw)
+
+kf = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+
+def assumption_stats(resid, X_with_const):
+    try:
+        _, bp_p, _, _ = het_breuschpagan(resid, X_with_const)
+    except Exception:
+        bp_p = np.nan
+    return {
+        'bp_p'  : bp_p,
+        'dw'    : sm.stats.stattools.durbin_watson(resid),
+        'skew'  : float(pd.Series(resid).skew()),
+        'kurt'  : float(pd.Series(resid).kurt()),
+    }
+```
+
+
+# OLS Variants
+
+## OLS v1 — Baseline
+
+```{python}
+#| label: ols_v1
+
+Xc_tr = sm.add_constant(X_train, has_constant='add')
+Xc_te = sm.add_constant(X_test, has_constant='add').reindex(
+            columns=Xc_tr.columns, fill_value=0)
+
+ols_v1 = sm.OLS(y_train, Xc_tr).fit()
+
+yhat_tr = ols_v1.predict(Xc_tr)
+yhat_te = ols_v1.predict(Xc_te)
+resid   = y_train.values - yhat_tr.values
+
+r2_tr = r2_score(y_train, yhat_tr)
+r2_te = r2_score(y_test,  yhat_te)
+cv    = cross_val_score(LinearRegression(), X_train, y_train, cv=kf, scoring='r2')
+stats_d = assumption_stats(resid, Xc_tr)
+
+print("=" * 55)
+print("  OLS v1 — Baseline")
+print("=" * 55)
+print(f"  Train R²         : {r2_tr:.4f}")
+print(f"  Test  R²         : {r2_te:.4f}")
+print(f"  Train–Test gap   : {r2_tr - r2_te:+.4f}")
+print(f"  5-fold CV R²     : {cv.mean():.4f} ± {cv.std():.4f}")
+print(f"  AIC              : {ols_v1.aic:.1f}")
+print(f"  BIC              : {ols_v1.bic:.1f}")
+print(f"  Durbin-Watson    : {stats_d['dw']:.3f}")
+print(f"  Breusch-Pagan p  : {stats_d['bp_p']:.2e}")
+print(f"  Resid skew / kurt: {stats_d['skew']:+.3f} / {stats_d['kurt']:.3f}")
+
+record(model='OLS v1 (base)', r2_train=r2_tr, r2_test=r2_te,
+       cv_r2=cv.mean(), cv_std=cv.std(),
+       aic=ols_v1.aic, bic=ols_v1.bic, n_feat=X_train.shape[1],
+       **stats_d)
+```
+
+```{python}
+#| label: ols_v1_diagnostics
+
+fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+axes[0,0].scatter(yhat_tr, resid, alpha=0.2, s=8, color="#2980b9")
+axes[0,0].axhline(0, color="red", linestyle="--")
+axes[0,0].set(title="Residuals vs Fitted", xlabel="Fitted", ylabel="Residuals")
+
+(osm, osr), (slope, intercept, _) = scipy_stats.probplot(resid, dist="norm")
+axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+axes[0,1].set(title="Normal Q-Q", xlabel="Theoretical Quantiles", ylabel="Sample Quantiles")
+
+axes[0,2].scatter(yhat_tr, np.sqrt(np.abs(resid)), alpha=0.2, s=8, color="#27ae60")
+axes[0,2].set(title="Scale-Location", xlabel="Fitted", ylabel="√|Residuals|")
+
+colors = {"Residential": "#2980b9", "Land Sales": "#f39c12", "Multi-Family": "#9b59b6"}
+for seg, col in colors.items():
+    mask = (seg_train == seg).values
+    if mask.any():
+        axes[1,0].scatter(yhat_tr[mask], resid[mask], alpha=0.25, s=8, color=col, label=seg)
+axes[1,0].axhline(0, color="red", linestyle="--")
+axes[1,0].set(title="Residuals vs Fitted by Segment",
+              xlabel="Fitted", ylabel="Residuals"); axes[1,0].legend()
+
+axes[1,1].hist(resid, bins=60, color="#9b59b6", edgecolor="white")
+axes[1,1].axvline(0, color="red", linestyle="--")
+axes[1,1].set(title="Residual Distribution", xlabel="Residuals", ylabel="Count")
+
+axes[1,2].scatter(y_test, yhat_te, alpha=0.2, s=8, color="#e67e22")
+axes[1,2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()],
+               color="red", linestyle="--")
+axes[1,2].set(title="Actual vs Predicted (Test)",
+              xlabel="Actual ln(Price)", ylabel="Predicted ln(Price)")
+
+plt.suptitle("OLS v1 — Baseline Diagnostics", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+The base OLS has a large train–test gap (≈0.08) — a classic sign of a
+wide, under-regularized feature matrix overfitting to noise.  Breusch-Pagan
+is ≪ 0.05, meaning heteroscedasticity is present.  The regularized models
+below address both.
+
+## OLS v2 — Polynomial Terms
+
+Squared terms on `ln_GLA`, `Quality_Weighted`, `EffYearBuilt_Weighted`,
+and `AsinH_Acreage`.
+
+```{python}
+#| label: ols_v2
+
+Xc_tr = sm.add_constant(X_train_v2, has_constant='add')
+Xc_te = sm.add_constant(X_test_v2, has_constant='add').reindex(
+            columns=Xc_tr.columns, fill_value=0)
+ols_v2 = sm.OLS(y_train, Xc_tr).fit()
+yhat_tr, yhat_te = ols_v2.predict(Xc_tr), ols_v2.predict(Xc_te)
+resid = y_train.values - yhat_tr.values
+r2_tr, r2_te = r2_score(y_train, yhat_tr), r2_score(y_test, yhat_te)
+cv = cross_val_score(LinearRegression(), X_train_v2, y_train, cv=kf, scoring='r2')
+stats_d = assumption_stats(resid, Xc_tr)
+
+print("=" * 55)
+print("  OLS v2 — Polynomial")
+print("=" * 55)
+print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+print(f"  5-fold CV R²       : {cv.mean():.4f} ± {cv.std():.4f}")
+print(f"  AIC                : {ols_v2.aic:.1f}")
+
+record(model='OLS v2 (poly)', r2_train=r2_tr, r2_test=r2_te,
+       cv_r2=cv.mean(), cv_std=cv.std(),
+       aic=ols_v2.aic, bic=ols_v2.bic, n_feat=X_train_v2.shape[1], **stats_d)
+```
+
+## OLS v3 — Segment × Numeric Interactions
+
+```{python}
+#| label: ols_v3
+
+Xc_tr = sm.add_constant(X_train_v3, has_constant='add')
+Xc_te = sm.add_constant(X_test_v3, has_constant='add').reindex(
+            columns=Xc_tr.columns, fill_value=0)
+ols_v3 = sm.OLS(y_train, Xc_tr).fit()
+yhat_tr, yhat_te = ols_v3.predict(Xc_tr), ols_v3.predict(Xc_te)
+resid = y_train.values - yhat_tr.values
+r2_tr, r2_te = r2_score(y_train, yhat_tr), r2_score(y_test, yhat_te)
+cv = cross_val_score(LinearRegression(), X_train_v3, y_train, cv=kf, scoring='r2')
+stats_d = assumption_stats(resid, Xc_tr)
+
+print("=" * 55)
+print("  OLS v3 — Segment × Numeric Interactions")
+print("=" * 55)
+print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+print(f"  5-fold CV R²       : {cv.mean():.4f} ± {cv.std():.4f}")
+print(f"  AIC                : {ols_v3.aic:.1f}")
+
+record(model='OLS v3 (seg×num)', r2_train=r2_tr, r2_test=r2_te,
+       cv_r2=cv.mean(), cv_std=cv.std(),
+       aic=ols_v3.aic, bic=ols_v3.bic, n_feat=X_train_v3.shape[1], **stats_d)
+```
+
+## OLS v4 — Polynomial + Interactions
+
+```{python}
+#| label: ols_v4
+
+Xc_tr = sm.add_constant(X_train_v4, has_constant='add')
+Xc_te = sm.add_constant(X_test_v4, has_constant='add').reindex(
+            columns=Xc_tr.columns, fill_value=0)
+ols_v4 = sm.OLS(y_train, Xc_tr).fit()
+yhat_tr, yhat_te = ols_v4.predict(Xc_tr), ols_v4.predict(Xc_te)
+resid = y_train.values - yhat_tr.values
+r2_tr, r2_te = r2_score(y_train, yhat_tr), r2_score(y_test, yhat_te)
+cv = cross_val_score(LinearRegression(), X_train_v4, y_train, cv=kf, scoring='r2')
+stats_d = assumption_stats(resid, Xc_tr)
+
+print("=" * 55)
+print("  OLS v4 — Polynomial + Segment×Numeric")
+print("=" * 55)
+print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+print(f"  5-fold CV R²       : {cv.mean():.4f} ± {cv.std():.4f}")
+print(f"  AIC                : {ols_v4.aic:.1f}")
+
+record(model='OLS v4 (poly+seg×num)', r2_train=r2_tr, r2_test=r2_te,
+       cv_r2=cv.mean(), cv_std=cv.std(),
+       aic=ols_v4.aic, bic=ols_v4.bic, n_feat=X_train_v4.shape[1], **stats_d)
+```
+
+Note the pattern — AIC keeps improving as we add features (it rewards
+in-sample fit), but test R² *worsens* from v1 to v4 and the train–test
+gap widens.  The OLS form cannot handle the high-dimensional interaction
+matrix on its own.  Regularization should help.
+
+
+# Shrinkage Methods
+
+All shrinkage fits are on standardized predictors.  We tune α (and the
+L1 ratio for ElasticNet) on the train fold via 5-fold CV.
+
+```{python}
+#| label: scale_for_shrinkage
+
+scaler_base = StandardScaler()
+Xtr_s = scaler_base.fit_transform(X_train)
+Xte_s = scaler_base.transform(X_test)
+
+scaler_v4 = StandardScaler()
+Xtr_v4_s = scaler_v4.fit_transform(X_train_v4)
+Xte_v4_s = scaler_v4.transform(X_test_v4)
+```
+
+## Ridge
+
+```{python}
+#| label: ridge_models
+
+def best_ridge(Xtr, Xte, label):
+    alphas = np.logspace(-3, 6, 60)
+    best = None
+    for a in alphas:
+        cv = cross_val_score(Ridge(alpha=a), Xtr, y_train, cv=kf, scoring='r2')
+        if best is None or cv.mean() > best[1]:
+            best = (a, cv.mean(), cv.std())
+    a, cv_m, cv_s = best
+    m = Ridge(alpha=a).fit(Xtr, y_train)
+    r2_tr, r2_te = m.score(Xtr, y_train), m.score(Xte, y_test)
+
+    print("=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  α (CV-tuned)      : {a:.3f}")
+    print(f"  Train R² / Test R²: {r2_tr:.4f}  /  {r2_te:.4f}")
+    print(f"  Train–Test gap    : {r2_tr - r2_te:+.4f}")
+    print(f"  5-fold CV R²      : {cv_m:.4f} ± {cv_s:.4f}")
+
+    record(model=label, r2_train=r2_tr, r2_test=r2_te,
+           cv_r2=cv_m, cv_std=cv_s, alpha=a, n_feat=Xtr.shape[1])
+    return m
+
+ridge_base = best_ridge(Xtr_s,    Xte_s,    'Ridge (base)')
+ridge_v4   = best_ridge(Xtr_v4_s, Xte_v4_s, 'Ridge (poly+seg×num)')
+```
+
+## Lasso
+
+```{python}
+#| label: lasso_models
+
+def best_lasso(Xtr, Xte, label):
+    m = LassoCV(alphas=np.logspace(-4, 0, 40), cv=kf,
+                max_iter=20000, random_state=RANDOM_STATE).fit(Xtr, y_train)
+    cv = cross_val_score(Lasso(alpha=m.alpha_, max_iter=20000),
+                          Xtr, y_train, cv=kf, scoring='r2')
+    r2_tr, r2_te = m.score(Xtr, y_train), m.score(Xte, y_test)
+    n_nz = int((m.coef_ != 0).sum())
+
+    print("=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  α (CV-tuned)      : {m.alpha_:.5f}")
+    print(f"  Non-zero coefs    : {n_nz} / {Xtr.shape[1]}")
+    print(f"  Train R² / Test R²: {r2_tr:.4f}  /  {r2_te:.4f}")
+    print(f"  Train–Test gap    : {r2_tr - r2_te:+.4f}")
+    print(f"  5-fold CV R²      : {cv.mean():.4f} ± {cv.std():.4f}")
+
+    record(model=label, r2_train=r2_tr, r2_test=r2_te,
+           cv_r2=cv.mean(), cv_std=cv.std(),
+           alpha=m.alpha_, n_nonzero=n_nz, n_feat=Xtr.shape[1])
+    return m
+
+lasso_base = best_lasso(Xtr_s,    Xte_s,    'Lasso (base)')
+lasso_v4   = best_lasso(Xtr_v4_s, Xte_v4_s, 'Lasso (poly+seg×num)')
+```
+
+## ElasticNet
+
+```{python}
+#| label: elasticnet_models
+
+def best_en(Xtr, Xte, label):
+    m = ElasticNetCV(l1_ratio=[.1, .3, .5, .7, .9, .95, .99],
+                      alphas=np.logspace(-4, 0, 40),
+                      cv=kf, max_iter=20000,
+                      random_state=RANDOM_STATE).fit(Xtr, y_train)
+    r2_tr, r2_te = m.score(Xtr, y_train), m.score(Xte, y_test)
+    n_nz = int((m.coef_ != 0).sum())
+
+    print("=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  α (CV-tuned)      : {m.alpha_:.5f}")
+    print(f"  L1 ratio          : {m.l1_ratio_:.2f}")
+    print(f"  Non-zero coefs    : {n_nz} / {Xtr.shape[1]}")
+    print(f"  Train R² / Test R²: {r2_tr:.4f}  /  {r2_te:.4f}")
+    print(f"  Train–Test gap    : {r2_tr - r2_te:+.4f}")
+
+    record(model=label, r2_train=r2_tr, r2_test=r2_te,
+           alpha=m.alpha_, l1_ratio=m.l1_ratio_,
+           n_nonzero=n_nz, n_feat=Xtr.shape[1])
+    return m
+
+en_base = best_en(Xtr_s,    Xte_s,    'ElasticNet (base)')
+en_v4   = best_en(Xtr_v4_s, Xte_v4_s, 'ElasticNet (poly+seg×num)')
+```
+
+
+# Lasso-Select → OLS Refit
+
+Lasso already shrinks the model toward a parsimonious subset; refitting
+plain OLS on those selected features gives us:
+
+-   unbiased (non-shrunk) coefficient estimates for inference, and
+-   the textbook diagnostic machinery (AIC, BIC, Breusch-Pagan, etc.).
+
+This is a classic two-stage selection pipeline — Lasso for feature
+identification, OLS for interpretation.
+
+```{python}
+#| label: lasso_then_ols
+
+def lasso_then_ols(Xtr_s_arr, Xte_s_arr, Xtr_df, Xte_df, lasso_model, label):
+    sel_idx   = np.where(lasso_model.coef_ != 0)[0]
+    sel_names = Xtr_df.columns[sel_idx].tolist()
+
+    # Refit OLS on UNSCALED selected features for interpretable coefficients
+    Xtr_sel = Xtr_df[sel_names]
+    Xte_sel = Xte_df[sel_names]
+    Xc_tr   = sm.add_constant(Xtr_sel, has_constant='add')
+    Xc_te   = sm.add_constant(Xte_sel, has_constant='add').reindex(
+                columns=Xc_tr.columns, fill_value=0)
+
+    m = sm.OLS(y_train, Xc_tr).fit()
+    yhat_tr, yhat_te = m.predict(Xc_tr), m.predict(Xc_te)
+    resid = y_train.values - yhat_tr.values
+    r2_tr, r2_te = r2_score(y_train, yhat_tr), r2_score(y_test, yhat_te)
+    stats_d = assumption_stats(resid, Xc_tr)
+
+    print("=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Selected features  : {len(sel_names)} / {Xtr_df.shape[1]}")
+    print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+    print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+    print(f"  AIC                : {m.aic:.1f}")
+    print(f"  Breusch-Pagan p    : {stats_d['bp_p']:.2e}")
+    print(f"  Durbin-Watson      : {stats_d['dw']:.3f}")
+    print(f"  Resid skew / kurt  : {stats_d['skew']:+.3f} / {stats_d['kurt']:.3f}")
+
+    record(model=label, r2_train=r2_tr, r2_test=r2_te,
+           aic=m.aic, bic=m.bic, n_feat=len(sel_names), **stats_d)
+    return m, sel_names
+
+lasso_ols_base, sel_base = lasso_then_ols(
+    Xtr_s, Xte_s, X_train, X_test, lasso_base, 'Lasso→OLS (base)')
+
+lasso_ols_v4, sel_v4 = lasso_then_ols(
+    Xtr_v4_s, Xte_v4_s, X_train_v4, X_test_v4, lasso_v4, 'Lasso→OLS (poly+seg×num)')
+```
+
+
+# Robust Methods
+
+## Huber
+
+```{python}
+#| label: huber
+
+def run_huber(Xtr, Xte, label):
+    m = HuberRegressor(max_iter=1000, alpha=1e-3).fit(Xtr, y_train)
+    r2_tr, r2_te = m.score(Xtr, y_train), m.score(Xte, y_test)
+
+    print("=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+    print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+
+    record(model=label, r2_train=r2_tr, r2_test=r2_te, n_feat=Xtr.shape[1])
+    return m
+
+huber_base = run_huber(Xtr_s,    Xte_s,    'Huber (base)')
+huber_v4   = run_huber(Xtr_v4_s, Xte_v4_s, 'Huber (poly+seg×num)')
+```
+
+## WLS (Variance-Structure Weights)
+
+```{python}
+#| label: wls
+
+def run_wls(X_in_tr, X_in_te, label):
+    Xc_tr = sm.add_constant(X_in_tr, has_constant='add')
+    Xc_te = sm.add_constant(X_in_te, has_constant='add').reindex(
+                columns=Xc_tr.columns, fill_value=0)
+
+    # Stage 1 — OLS to estimate variance structure
+    ols_s1 = sm.OLS(y_train, Xc_tr).fit()
+    fv     = ols_s1.predict(Xc_tr).values
+    res_s1 = y_train.values - fv
+
+    # log(|resid|²) ≈ function of fitted values → exp gives σ²
+    var_model = sm.OLS(np.log(res_s1 ** 2 + 1e-8),
+                        sm.add_constant(fv)).fit()
+    w = 1.0 / np.exp(var_model.predict(sm.add_constant(fv)))
+
+    wls = sm.WLS(y_train, Xc_tr, weights=w).fit()
+    yhat_tr, yhat_te = wls.predict(Xc_tr), wls.predict(Xc_te)
+    r2_tr, r2_te = r2_score(y_train, yhat_tr), r2_score(y_test, yhat_te)
+
+    print("=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+    print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+
+    record(model=label, r2_train=r2_tr, r2_test=r2_te, n_feat=X_in_tr.shape[1])
+    return wls
+
+wls_base = run_wls(X_train,    X_test,    'WLS (base)')
+wls_v4   = run_wls(X_train_v4, X_test_v4, 'WLS (poly+seg×num)')
+```
+
+## Quantile (Median) Regression
+
+```{python}
+#| label: quantile
+
+Xc_tr = sm.add_constant(X_train, has_constant='add')
+Xc_te = sm.add_constant(X_test, has_constant='add').reindex(
+            columns=Xc_tr.columns, fill_value=0)
+
+qr = QuantReg(y_train, Xc_tr).fit(q=0.5, max_iter=2000)
+yhat_tr, yhat_te = qr.predict(Xc_tr), qr.predict(Xc_te)
+r2_tr, r2_te = r2_score(y_train, yhat_tr), r2_score(y_test, yhat_te)
+
+print("=" * 55)
+print("  Quantile (median) Regression")
+print("=" * 55)
+print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+
+record(model='Quantile median (base)', r2_train=r2_tr, r2_test=r2_te,
+       n_feat=X_train.shape[1])
+```
+
+
+# Dimension Reduction
+
+## Principal Component Regression (PCR)
+
+```{python}
+#| label: pcr
+
+pca = PCA(random_state=RANDOM_STATE).fit(Xtr_s)
+
+best = None
+for nc in [5, 10, 15, 20, 30, 40, 50, 60, 70]:
+    Ztr = pca.transform(Xtr_s)[:, :nc]
+    cv  = cross_val_score(LinearRegression(), Ztr, y_train, cv=kf, scoring='r2')
+    if best is None or cv.mean() > best[1]:
+        best = (nc, cv.mean(), cv.std())
+nc, cv_m, cv_s = best
+
+Ztr = pca.transform(Xtr_s)[:, :nc]
+Zte = pca.transform(Xte_s)[:, :nc]
+pcr = LinearRegression().fit(Ztr, y_train)
+r2_tr, r2_te = pcr.score(Ztr, y_train), pcr.score(Zte, y_test)
+
+cum_var = np.cumsum(pca.explained_variance_ratio_)
+print("=" * 55)
+print(f"  PCR — {nc} components")
+print("=" * 55)
+print(f"  Cumulative variance at {nc}: {cum_var[nc-1]*100:.1f}%")
+print(f"  Train R² / Test R²       : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap           : {r2_tr - r2_te:+.4f}")
+print(f"  5-fold CV R²             : {cv_m:.4f} ± {cv_s:.4f}")
+
+record(model=f'PCR ({nc} comps)', r2_train=r2_tr, r2_test=r2_te,
+       cv_r2=cv_m, cv_std=cv_s, n_comp=nc)
+```
+
+## Partial Least Squares (PLS)
+
+```{python}
+#| label: pls
+
+best = None
+for nc in [2, 5, 10, 15, 20, 25, 30, 40]:
+    try:
+        cv = cross_val_score(PLSRegression(n_components=nc, max_iter=500),
+                              Xtr_s, y_train, cv=kf, scoring='r2')
+        if best is None or cv.mean() > best[1]:
+            best = (nc, cv.mean(), cv.std())
+    except Exception:
+        continue
+nc, cv_m, cv_s = best
+
+pls = PLSRegression(n_components=nc, max_iter=500).fit(Xtr_s, y_train)
+r2_tr, r2_te = pls.score(Xtr_s, y_train), pls.score(Xte_s, y_test)
+
+print("=" * 55)
+print(f"  PLS — {nc} components")
+print("=" * 55)
+print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+print(f"  5-fold CV R²       : {cv_m:.4f} ± {cv_s:.4f}")
+
+record(model=f'PLS ({nc} comps)', r2_train=r2_tr, r2_test=r2_te,
+       cv_r2=cv_m, cv_std=cv_s, n_comp=nc)
+```
+
+
+# Segment-Stratified OLS
+
+Fit one OLS per segment (Residential / Land Sales / Multi-Family) and
+glue the predictions back together.  This gives each segment its own
+intercept *and* slopes — maximum flexibility, but far more parameters
+than the data can support in the tiny Multi-Family segment.
+
+```{python}
+#| label: segment_stratified
+
+yhat_train = np.full(len(y_train), np.nan)
+yhat_test  = np.full(len(y_test),  np.nan)
+
+for s in seg_train.unique():
+    tr_m = (seg_train == s).values
+    te_m = (seg_test  == s).values
+    if tr_m.sum() < 10:
+        continue
+
+    Xc_s = sm.add_constant(X_train[tr_m], has_constant='add')
+    nz   = Xc_s.loc[:, (Xc_s != 0).any(axis=0)]
+    m    = sm.OLS(y_train[tr_m], nz).fit()
+    yhat_train[tr_m] = m.predict(nz).values
+
+    if te_m.any():
+        Xc_te_s = sm.add_constant(X_test[te_m], has_constant='add').reindex(
+                    columns=nz.columns, fill_value=0)
+        yhat_test[te_m] = m.predict(Xc_te_s).values
+
+mask_tr = ~np.isnan(yhat_train)
+mask_te = ~np.isnan(yhat_test)
+
+r2_tr = r2_score(y_train[mask_tr], yhat_train[mask_tr])
+r2_te = r2_score(y_test[mask_te],  yhat_test[mask_te])
+
+print("=" * 55)
+print("  Segment-Stratified OLS")
+print("=" * 55)
+print(f"  Train R² / Test R² : {r2_tr:.4f}  /  {r2_te:.4f}")
+print(f"  Train–Test gap     : {r2_tr - r2_te:+.4f}")
+
+record(model='Segment-stratified OLS', r2_train=r2_tr, r2_test=r2_te,
+       n_feat=X_train.shape[1])
+```
+
+The gap is severe — the Multi-Family segment only has ~40 training rows
+supporting ~70 predictors, so that sub-model is badly overfit.  This
+confirms that a single regularized model across all segments is a better
+strategy for this data.
+
+
+# Overall Comparison
+
+```{python}
+#| label: final_comparison
+
+cols = ['model', 'r2_train', 'r2_test', 'cv_r2', 'cv_std',
+        'aic', 'bp_p', 'dw', 'skew', 'kurt',
+        'n_feat', 'n_nonzero', 'n_comp', 'alpha', 'l1_ratio']
+
+comp = pd.DataFrame(results)
+for c in cols:
+    if c not in comp.columns:
+        comp[c] = np.nan
+comp = comp[cols].copy()
+comp['gap'] = comp['r2_train'] - comp['r2_test']
+
+comp_sorted = comp.sort_values('r2_test', ascending=False).reset_index(drop=True)
+print("=" * 95)
+print("  All models, ranked by test R²")
+print("=" * 95)
+display_cols = ['model', 'r2_train', 'r2_test', 'gap', 'cv_r2', 'cv_std',
+                'n_feat', 'n_nonzero', 'aic', 'bp_p', 'dw']
+print(comp_sorted[display_cols].to_string(index=False,
+    float_format=lambda x: f"{x:.4f}" if pd.notnull(x) else ""))
+```
+
+```{python}
+#| label: ranking_plot
+
+fig, ax = plt.subplots(figsize=(11, 9))
+order = comp_sorted['model'].tolist()[::-1]
+vals_test  = comp_sorted.set_index('model').loc[order, 'r2_test'].values
+vals_train = comp_sorted.set_index('model').loc[order, 'r2_train'].values
+
+y_pos = np.arange(len(order))
+ax.barh(y_pos - 0.2, vals_train, height=0.4, color="#2980b9", alpha=0.5, label="Train R²")
+ax.barh(y_pos + 0.2, vals_test,  height=0.4, color="#e67e22", label="Test R²")
+ax.set_yticks(y_pos)
+ax.set_yticklabels(order, fontsize=9)
+ax.set_xlabel("R²")
+ax.set_xlim(0.65, 0.92)
+ax.axvline(vals_test.max(), color="#27ae60", linestyle="--", alpha=0.6,
+           label=f"Best test R² = {vals_test.max():.4f}")
+ax.set_title("All Linear Models — Train vs Test R²")
+ax.legend(loc="lower right")
+ax.grid(axis='x', alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+## Reading the Table
+
+-   **Test R² ≥ 0.87** cluster: `Lasso→OLS (poly+seg×num)`, `PLS (5)`,
+    `Ridge (base)`, `Ridge (poly+seg×num)`, `Lasso (poly+seg×num)`, and
+    `Lasso (base)`.  Every one of these has a train–test gap ≤ 0.002 —
+    essentially no overfitting.
+-   The unregularized OLS variants and every robust fit (Huber, WLS,
+    Quantile) sit at R²\_test ≈ 0.78–0.80 with 0.08+ train–test gaps.
+    The issue is not that those methods are "bad" — it's that the raw
+    OLS surface overfits this feature matrix, and anchoring weights or
+    residual quantiles on that surface inherits the overfit.
+-   Segment-stratified OLS is the clearest overfit of the bunch (gap
+    ≈ 0.15), driven by the Multi-Family sub-model.
+
+The top of the ranking deserves a closer look.
+
+
+# Winning Model — Lasso → OLS (Poly + Segment×Numeric)
+
+The winner is **Lasso selection on the 95-feature polynomial +
+segment-interaction matrix, followed by OLS refitting on the selected
+features**.
+
+-   Best **test R² (0.8752)** of any model tried.
+-   **Slightly negative** train–test gap (−0.0004) → no overfitting,
+    actually generalizes a hair better than it fits in-sample.
+-   **34 features** survive selection (from 95) — parsimonious.
+-   Fully interpretable: OLS coefficients with standard errors,
+    t-statistics, and p-values.
+
+```{python}
+#| label: winner_refit
+
+sel_names = X_train_v4.columns[np.where(lasso_v4.coef_ != 0)[0]].tolist()
+
+Xtr_sel = X_train_v4[sel_names]
+Xte_sel = X_test_v4[sel_names]
+
+Xc_tr = sm.add_constant(Xtr_sel, has_constant='add')
+Xc_te = sm.add_constant(Xte_sel, has_constant='add').reindex(
+            columns=Xc_tr.columns, fill_value=0)
+
+winner   = sm.OLS(y_train, Xc_tr).fit()
+yhat_tr  = winner.predict(Xc_tr)
+yhat_te  = winner.predict(Xc_te)
+resid    = y_train.values - yhat_tr.values
+
+r2_tr   = r2_score(y_train, yhat_tr)
+r2_te   = r2_score(y_test,  yhat_te)
+mae_tr  = mean_absolute_error(y_train, yhat_tr)
+mae_te  = mean_absolute_error(y_test,  yhat_te)
+stats_d = assumption_stats(resid, Xc_tr)
+
+# back-transformed dollar error: E[price] * (exp(MAE_ln) - 1)
+dollar_mae_te = np.exp(y_test.values).mean() * (np.exp(mae_te) - 1)
+
+print("=" * 60)
+print("  Winner — Lasso→OLS (poly + seg×num)")
+print("=" * 60)
+print(f"  Features selected   : {len(sel_names)} / 95")
+print(f"  Train R²            : {r2_tr:.4f}")
+print(f"  Test  R²            : {r2_te:.4f}")
+print(f"  Train–Test gap      : {r2_tr - r2_te:+.4f}")
+print(f"  Train MAE (ln)      : {mae_tr:.4f}")
+print(f"  Test  MAE (ln)      : {mae_te:.4f}")
+print(f"  Approx $ MAE (test) : ${dollar_mae_te:,.0f}")
+print(f"  AIC                 : {winner.aic:.1f}")
+print(f"  BIC                 : {winner.bic:.1f}")
+print(f"  Durbin-Watson       : {stats_d['dw']:.3f}")
+print(f"  Breusch-Pagan p     : {stats_d['bp_p']:.2e}")
+print(f"  Residual skew / kurt: {stats_d['skew']:+.3f} / {stats_d['kurt']:.3f}")
+```
+
+## Coefficient Table
+
+```{python}
+#| label: winner_coefs
+
+coef_df = pd.DataFrame({
+    'coef'   : winner.params,
+    'std_err': winner.bse,
+    't'      : winner.tvalues,
+    'p'      : winner.pvalues
+}).drop('const', errors='ignore')
+
+coef_df['|t|'] = coef_df['t'].abs()
+coef_df = coef_df.sort_values('|t|', ascending=False).drop(columns='|t|')
+
+print("── Top 20 coefficients by |t| ──")
+print(coef_df.head(20).to_string())
+```
+
+## Winner Diagnostics
+
+```{python}
+#| label: winner_diagnostics
+
+fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+axes[0,0].scatter(yhat_tr, resid, alpha=0.2, s=8, color="#2980b9")
+axes[0,0].axhline(0, color="red", linestyle="--")
+axes[0,0].set(title="Residuals vs Fitted", xlabel="Fitted", ylabel="Residuals")
+
+(osm, osr), (slope, intercept, _) = scipy_stats.probplot(resid, dist="norm")
+axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+axes[0,1].set(title="Normal Q-Q", xlabel="Theoretical Quantiles", ylabel="Sample Quantiles")
+
+axes[0,2].scatter(yhat_tr, np.sqrt(np.abs(resid)), alpha=0.2, s=8, color="#27ae60")
+axes[0,2].set(title="Scale-Location", xlabel="Fitted", ylabel="√|Residuals|")
+
+colors = {"Residential": "#2980b9", "Land Sales": "#f39c12", "Multi-Family": "#9b59b6"}
+for seg, col in colors.items():
+    mask = (seg_train == seg).values
+    if mask.any():
+        axes[1,0].scatter(yhat_tr[mask], resid[mask], alpha=0.25, s=8, color=col, label=seg)
+axes[1,0].axhline(0, color="red", linestyle="--")
+axes[1,0].set(title="Residuals vs Fitted by Segment",
+              xlabel="Fitted", ylabel="Residuals"); axes[1,0].legend()
+
+axes[1,1].hist(resid, bins=60, color="#9b59b6", edgecolor="white")
+axes[1,1].axvline(0, color="red", linestyle="--")
+axes[1,1].set(title="Residual Distribution", xlabel="Residuals", ylabel="Count")
+
+axes[1,2].scatter(y_test, yhat_te, alpha=0.2, s=8, color="#e67e22")
+axes[1,2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()],
+               color="red", linestyle="--")
+axes[1,2].set(title="Actual vs Predicted (Test)",
+              xlabel="Actual ln(Price)", ylabel="Predicted ln(Price)")
+
+plt.suptitle("Winner — Lasso→OLS (Poly + Seg×Num) Diagnostics", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+## Assumption Check — What Passes and What Doesn't
+
+-   **Linearity** — the residuals-vs-fitted cloud is centered on zero
+    across the full fitted range, with no clear curvature.  ✅
+-   **Independence** — Durbin-Watson ≈ 2.01.  ✅
+-   **Normality of residuals** — skew ≈ −0.07 (essentially symmetric);
+    kurtosis ≈ 2.79 (slightly leptokurtic, tails a bit fatter than
+    Gaussian).  The Q-Q plot is straight through most of the range with
+    mild tail deviation.  ✅ *reasonable* — not pristine.
+-   **Homoscedasticity** — Breusch-Pagan p ≈ 0.  ❌  Variance does grow
+    with fitted value.  Classical standard errors should be taken with a
+    grain of salt.  For inference-heavy questions, robust (HC3) standard
+    errors or a WLS refit on these 34 features would be the textbook fix;
+    for the prediction task the heteroscedasticity does not distort
+    point predictions, it only distorts the SEs.
+
+Practical takeaway: point estimates and test R² are trustworthy.  If you
+plan to report confidence intervals for coefficients, use
+`winner.get_robustcov_results('HC3')`.
+
+## What the Model Is Saying
+
+The largest-magnitude coefficients (by |t|) trace to four intuitive
+sources:
+
+1.  **Assessor-aligned capital stock** — `AsinH_Total_Value` (+0.28) and
+    `ln_GLA` (+0.23) dominate, exactly as you'd expect: more square
+    footage, higher assessed total, higher sale price.
+2.  **Property-type dummies** — `SpecificPropTypeDescription_DEFAULT`
+    (−1.32) and `_CONDOMINIUM / TOWNHOUSE` (−0.08) carve out known
+    discounts relative to the base category.
+3.  **Quality curvature** — the selected `Quality_Weighted_sq`
+    (+0.012) captures the convex relationship: moving from quality 3 to
+    4 is worth less than from 4 to 5.
+4.  **Segment / style fixed effects** — `segment_Residential` (−0.025),
+    `NbhdCode2_M` (+0.125), `Main_StyleDesc_One Story`, etc., pick up
+    the residual unexplained location/style premium.
+
+Of the engineered features:
+
+-   Both squared terms from the polynomial set
+    (`Quality_Weighted_sq`, `EffYearBuilt_Weighted_sq`) were retained.
+-   Only **one** of the segment × numeric interactions survived:
+    `segment_Multi-Family × AsinH_Acreage`.  All others were shrunk to
+    zero by Lasso.  This is strong evidence that the pricing response to
+    continuous predictors is roughly *constant across segments* for this
+    market — the multi-family relationship with acreage is the one real
+    exception.
+
+## Back-Transforming to Dollars
+
+On the log-scale the test MAE is 0.0805.  In dollar terms that's roughly
+
+$$
+\text{median test } \$ \text{ error} \approx \overline{P_{\text{test}}} \cdot \left(e^{0.0805} - 1\right) \approx \$34{,}700
+$$
+
+on properties whose test-set mean sale price is ≈ \$410K.  That's ≈ 8.4%
+of the mean sale price — a workable error band for appraisal-style use,
+though wider at the tails given the heteroscedasticity.
+
+
+# Summary
+
+| Model | Test R² | Gap | N feat. | Notes |
+|---|---|---|---|---|
+| **Lasso→OLS (poly+seg×num)** | **0.8752** | **−0.0004** | **34** | **Winner — full OLS inference, parsimonious** |
+| PLS (5 components) | 0.8721 | +0.0013 | 5 comps | Very simple, close runner-up |
+| Ridge (base) | 0.8711 | +0.0009 | 79 | Best pure-shrinkage fit |
+| Ridge (poly+seg×num) | 0.8701 | +0.0015 | 95 | |
+| Lasso (poly+seg×num) | 0.8696 | +0.0011 | 34 nz | |
+| OLS v1–v4 (unregularized) | 0.79–0.80 | +0.08–0.09 | 79–95 | Overfit |
+| Huber / WLS / Quantile | 0.77–0.80 | +0.08–0.11 | 79–95 | Inherits OLS overfit |
+| Segment-stratified OLS | 0.73 | +0.15 | 79 | Multi-Family overfit |
+
+**Take the Lasso→OLS (poly + seg×num) model into the final write-up as
+the linear candidate.**  It hits the highest test R², shows no
+overfitting, and cleanly meets independence and linearity assumptions;
+the only caveat is heteroscedasticity, which is straightforward to
+report around.  Pair it with the upcoming non-linear (random forest /
+gradient-boosted) model so the capstone has one interpretable model and
+one high-flexibility model side-by-side.

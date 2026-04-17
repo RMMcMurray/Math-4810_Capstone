@@ -1,0 +1,1893 @@
+---
+title: "Model Building and Evaluation"
+format: html
+execute: 
+    echo: false
+    warning: false
+    message: false
+    cache: true
+    warning: false
+engine: python
+---
+
+```{python}
+#| label: Initial Imports
+#| include: false
+#| message: false
+#| warning: false
+
+import pandas as pd
+import numpy as np
+from pandas import read_csv
+import openpyxl
+from pandas.core.common import random_state
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import seaborn as sns
+import sklearn
+from umap import UMAP
+import umap
+from scipy import stats
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import QuantileTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import PowerTransformer
+import hdbscan
+from hdbscan import validity
+import reverse_geocoder as rg
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+
+import statsmodels.formula.api as smf
+import matplotlib.dates as mdates
+import plotly.express as px
+import pwlf
+from scipy.stats import rankdata
+
+```
+
+```{python}
+#| label: data cleaning and model prep
+
+data = read_csv("/Users/melaniejensen/Library/CloudStorage/OneDrive-SouthernUtahUniversity/Math-4810_Capstone/material/final_adjusted.csv")
+
+print(f"Starting rows: {len(data)}")
+print(data["segment"].value_counts().to_string())
+
+df_copy = data.copy()
+
+# ── Impute Variables ──────────────────────────────────
+impute_cols = [
+    'Tot Bsmt', 'SqFt_DetGarage', 'SqFt_DetCarport', 'Sqft_Barn', 'SqFt_Guest_House', 
+    'SqFt_Pools', 'SqFt_Recreational_Courts', 'SqFt_Shed', 'SqFt_Gazebo_Pavilion'
+]
+
+for col in impute_cols:
+    if col in df_copy.columns and df_copy[col].isna().any():
+        df_copy[col] = df_copy[col].fillna(0)
+
+# ── Drop columns ─────────────────────────────────────
+drop_cols = [
+    # Leakage
+    'Sold Price', 'Sold Date', 'Concessions Amount', 'Age', 'Adj_Price', 
+    'ln_Price', 'TotGLA', 'Time_1', 'Time_2', 'Time_3',
+    # Count
+    'Count_DetGarage', 'Count_ DetCarport', 'Count_Barn', 'Count_Guest_House', 
+    'Count_Pools', 'Count_Recreational_Courts', 'Count_Shed', 'Count_Gazebo_Pavilion'
+]
+
+df_copy = df_copy.drop(columns=[c for c in drop_cols if c in df_copy.columns])  # ← fixed
+
+# ── Clean Variables ──────────────────────────────────
+df_copy = df_copy[~df_copy['Land Value'].astype(str).str.contains(r'\$-', regex=True)]
+
+for col in ['Land Value', 'Total Value']:
+    df_copy[col] = df_copy[col].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False).astype(float)
+
+# ── Drop Missing Values ──────────────────────────────────
+df_copy = df_copy.dropna(subset = ['EffYearBuilt_Weighted', 'Quality_Weighted'])
+
+# ── Transform Variables ──────────────────────────────────
+df_copy["ln_Trended_Price"] = np.log(df_copy["Trended_Price"])
+df_copy['AsinH_Acreage'] = np.asinh(df_copy['Acreage'])
+df_copy['AsinH_Land_Value'] = np.asinh(df_copy['Land Value'])
+df_copy['AsinH_Total_Value'] = np.asinh(df_copy['Total Value'])
+df_copy['AsinH_Tot_Bsmt'] = np.asinh(df_copy['Tot Bsmt'])
+df_copy['AsinH_BsmtFin_Pct_Wghted'] = np.asinh(df_copy['BsmtFinishPct_Weighted'])
+df_copy['AsinH_Carport_Area'] = np.asinh(df_copy['CarportArea'])
+df_copy['AsinH_Garage_Area'] = np.asinh(df_copy['GarageArea'])
+df_copy['AsinH_SqFt_Det_Garage'] = np.asinh(df_copy['SqFt_DetGarage'])
+df_copy['AsinH_SqFt_Det_Carport'] = np.asinh(df_copy['SqFt_DetCarport'])
+df_copy['AsinH_SqFt_Barn'] = np.asinh(df_copy['Sqft_Barn'])
+df_copy['AsinH_SqFt_Guest_House'] = np.asinh(df_copy['SqFt_Guest_House'])
+df_copy['AsinH_SqFt_Pools'] = np.asinh(df_copy['SqFt_Pools'])
+df_copy['AsinH_SqFt_Recreational_Courts'] = np.asinh(df_copy['SqFt_Recreational_Courts'])
+df_copy['AsinH_SqFt_Shed'] = np.asinh(df_copy['SqFt_Shed'])
+df_copy['AsinH_SqFt_Gazebo_Pavilion'] = np.asinh(df_copy['SqFt_Gazebo_Pavilion'])
+
+# ── Drop Variables Part 2 ──────────────────────────────────
+drop_cols_2 = [
+    'Trended_Price', 'Acreage', 'Land Value', 'Total Value', 'Tot Bsmt', 
+    'BsmtFinishPct_Weighted', 'CarportArea', 'GarageArea', 'SqFt_DetGarage', 
+    'SqFt_DetCarport', 'Sqft_Barn', 'SqFt_Guest_House', 'SqFt_Pools', 
+    'SqFt_Recreational_Courts', 'SqFt_Shed', 'SqFt_Gazebo_Pavilion'
+]
+
+df_copy = df_copy.drop(columns=[c for c in drop_cols_2 if c in df_copy.columns])
+
+# ── Sample Check ──────────────────────────────────
+print(f"After Filtering Rows: {len(df_copy)}")
+print(df_copy["segment"].value_counts().to_string())
+
+print(df_copy.columns.tolist())
+
+```
+
+```{python}
+#| label: thin_market_filter
+
+from pygam import LinearGAM, s
+from functools import reduce
+import operator
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Thin Market Exploration — Spline-Based Filtering
+# ══════════════════════════════════════════════════════════════════════════════
+# Before splitting the data we use a preliminary GAM fit on the full dataset
+# to identify where spline relationships break down (thin market segments).
+# Properties in these regions exhibit fundamentally different pricing dynamics
+# and are excluded prior to modeling.
+
+SPLINE_COLS    = ["ln_GLA", "EffYearBuilt_Weighted", "Quality_Weighted",
+                  "AsinH_Acreage", "AsinH_Land_Value", "AsinH_Total_Value"]
+NUMERIC_COLS   = [c for c in df_copy.select_dtypes(include=[np.number]).columns
+                  if c != "ln_Trended_Price" and c not in SPLINE_COLS]
+
+# ── Fit a quick preliminary GAM on the full cleaned dataset ───────────────────
+X_explore = df_copy[SPLINE_COLS].fillna(0).values
+y_explore  = df_copy["ln_Trended_Price"].values
+
+spline_idx    = list(range(len(SPLINE_COLS)))
+gam_terms     = reduce(operator.add, [s(i, n_splines=20) for i in spline_idx])
+gam_explore   = LinearGAM(gam_terms)
+gam_explore.gridsearch(X_explore, y_explore, lam=np.logspace(0, 8, 60), progress=False)
+
+print(f"Exploratory GAM fit complete")
+print(f"  Best lambda : {np.unique([round(float(l[0]), 4) for l in gam_explore.lam])}")
+print(f"  GCV Score   : {gam_explore.statistics_['GCV']:.6f}")
+
+# ── Plot splines to identify thin market inflection points ────────────────────
+fig, axes = plt.subplots(1, len(SPLINE_COLS), figsize=(5 * len(SPLINE_COLS), 4))
+for i, col in enumerate(SPLINE_COLS):
+    XX = gam_explore.generate_X_grid(term=i)
+    axes[i].plot(XX[:, i], gam_explore.partial_dependence(term=i, X=XX), color="#2980b9")
+    axes[i].plot(XX[:, i], gam_explore.partial_dependence(term=i, X=XX, width=0.95)[1],
+                 c="r", ls="--", alpha=0.5)
+    axes[i].axhline(0, color="gray", linestyle=":", alpha=0.5)
+    axes[i].set_title(f"Spline: {col}")
+    axes[i].set_xlabel(col)
+    axes[i].set_ylabel("Partial Effect on ln(Price)")
+plt.suptitle("Exploratory GAM — Spline Partial Effects (Pre-Split, Full Data)", fontsize=13)
+plt.tight_layout()
+plt.show()
+
+# ── Percentile summary to inform cutoff decisions ─────────────────────────────
+print("\nln_GLA distribution:")
+for p in [90, 95, 99]:
+    print(f"  {p}th percentile: {np.percentile(df_copy['ln_GLA'], p):.3f}  "
+          f"(GLA ≈ {np.exp(np.percentile(df_copy['ln_GLA'], p)):.0f} sqft)")
+
+print("\nAsinH_Acreage distribution:")
+for p in [90, 95, 99]:
+    print(f"  {p}th percentile: {np.percentile(df_copy['AsinH_Acreage'], p):.3f}  "
+          f"(Acreage ≈ {np.sinh(np.percentile(df_copy['AsinH_Acreage'], p)):.2f} acres)")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Apply Thin Market Filter
+# ══════════════════════════════════════════════════════════════════════════════
+# Filters applied only where splines show a clear terminal decline,
+# indicating thin market segments with fundamentally different pricing dynamics.
+#
+#   ln_GLA          — peaks ~8.0, sharp decline after
+#   Quality_Weighted — peaks ~5.5, sharp decline after  
+#   AsinH_Land_Value — peaks ~12.5, sharp decline after
+#   AsinH_Total_Value — peaks ~14.5, sharp decline after
+#
+# No filter applied to EffYearBuilt_Weighted or AsinH_Acreage as neither
+# shows a sustained terminal decline.
+
+rows_before = len(df_copy)
+
+GLA_UPPER         = 8.0    # ln scale  → np.exp(8.0)  ≈ 2,981 sqft
+QUALITY_UPPER     = 5.5    # raw scale
+LAND_VAL_UPPER    = 12.5   # arcsinh scale → np.sinh(12.5) ≈ $134,561
+TOTAL_VAL_UPPER   = 14.5   # arcsinh scale → np.sinh(14.5) ≈ $996,332
+
+df_copy = df_copy[
+    (df_copy['ln_GLA']            <= GLA_UPPER)       &
+    (df_copy['Quality_Weighted']  <= QUALITY_UPPER)   &
+    (df_copy['AsinH_Land_Value']  <= LAND_VAL_UPPER)  &
+    (df_copy['AsinH_Total_Value'] <= TOTAL_VAL_UPPER)
+]
+
+rows_after = len(df_copy)
+
+print(f"Thin Market Filters Applied:")
+print(f"  ln_GLA          ≤ {GLA_UPPER}   → GLA          ≈ {np.exp(GLA_UPPER):>10,.0f} sqft")
+print(f"  Quality_Weighted ≤ {QUALITY_UPPER}   → Quality cap  ≈ {QUALITY_UPPER:>10.1f}")
+print(f"  AsinH_Land_Value ≤ {LAND_VAL_UPPER}  → Land Value   ≈ ${np.sinh(LAND_VAL_UPPER):>10,.0f}")
+print(f"  AsinH_Total_Value ≤ {TOTAL_VAL_UPPER}  → Total Value  ≈ ${np.sinh(TOTAL_VAL_UPPER):>10,.0f}")
+print(f"\n  Rows before  : {rows_before}")
+print(f"  Rows after   : {rows_after}")
+print(f"  Rows removed : {rows_before - rows_after}  ({(rows_before - rows_after)/rows_before*100:.1f}% of data)")
+print(f"\nSegment breakdown after filtering:")
+print(df_copy["segment"].value_counts().to_string())
+
+
+```
+
+```{python}
+# ── Train / test split ─────────────────────────────────────────────────────────
+train, test = train_test_split(df_copy, test_size=0.2, random_state=2026)
+
+X_train = train.select_dtypes(include=[np.number]).drop(columns='ln_Trended_Price', errors="ignore")
+X_test  = test.select_dtypes(include=[np.number]).drop(columns='ln_Trended_Price', errors="ignore")
+y_train = train["ln_Trended_Price"]
+y_test  = test["ln_Trended_Price"]
+
+print(f"\nTrain : {X_train.shape[0]} rows | {X_train.shape[1]} predictors")
+print(f"Test  : {X_test.shape[0]} rows")
+
+```
+
+## OLS
+
+```{python}
+#| label: ols_v1
+
+import statsmodels.api as sm
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OLS Setup — Dummy encode all categoricals from existing train/test split
+# ══════════════════════════════════════════════════════════════════════════════
+
+DUMMY_COLS = ['PropTypeDescription', 'SpecificPropTypeDescription',
+              'NbhdCode2', 'Main_StyleDesc', 'segment']
+
+train_ols = train.copy()
+test_ols  = test.copy()
+
+for col in DUMMY_COLS:
+    if col in train_ols.columns:
+        train_dummies = pd.get_dummies(train_ols[col], prefix=col, drop_first=True, dtype=int)
+        test_dummies  = pd.get_dummies(test_ols[col],  prefix=col, drop_first=True, dtype=int)
+        test_dummies  = test_dummies.reindex(columns=train_dummies.columns, fill_value=0)
+        train_ols = pd.concat([train_ols.drop(columns=col), train_dummies], axis=1)
+        test_ols  = pd.concat([test_ols.drop(columns=col),  test_dummies],  axis=1)
+
+train_ols = train_ols.fillna(0)
+test_ols  = test_ols.fillna(0)
+
+EXCLUDE      = ["ln_Trended_Price"]
+X_train_ols  = train_ols.select_dtypes(include=[np.number]).drop(columns=EXCLUDE, errors="ignore")
+X_test_ols   = test_ols.select_dtypes(include=[np.number]).drop(columns=EXCLUDE, errors="ignore")
+X_test_ols   = X_test_ols.reindex(columns=X_train_ols.columns, fill_value=0)
+y_train_ols  = train["ln_Trended_Price"]
+y_test_ols   = test["ln_Trended_Price"]
+
+print(f"OLS feature matrix: {X_train_ols.shape[0]} rows | {X_train_ols.shape[1]} predictors")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OLS v1 — Base OLS, No Interactions
+# ══════════════════════════════════════════════════════════════════════════════
+X_train_ols_const = sm.add_constant(X_train_ols)
+X_test_ols_const  = sm.add_constant(X_test_ols).reindex(
+                        columns=X_train_ols_const.columns, fill_value=0)
+
+ols_v1 = sm.OLS(y_train_ols, X_train_ols_const).fit()
+
+y_pred_ols_v1_train = ols_v1.predict(X_train_ols_const)
+y_pred_ols_v1_test  = ols_v1.predict(X_test_ols_const)
+resid_ols_v1        = y_train_ols.values - y_pred_ols_v1_train.values
+
+ss_res           = ((y_test_ols.values - y_pred_ols_v1_test.values) ** 2).sum()
+ss_tot           = ((y_test_ols.values - y_test_ols.values.mean()) ** 2).sum()
+r2_test_ols_v1   = 1 - ss_res / ss_tot
+r2_train_ols_v1  = r2_score(y_train_ols, y_pred_ols_v1_train)
+
+print("\n" + "=" * 50)
+print("  OLS v1 — Base Model")
+print("=" * 50)
+print(f"  Train R²       : {r2_train_ols_v1:.4f}")
+print(f"  Test  R²       : {r2_test_ols_v1:.4f}")
+print(f"  Train-Test gap : {r2_train_ols_v1 - r2_test_ols_v1:.4f}")
+print(f"  AIC            : {ols_v1.aic:.2f}")
+print(f"  BIC            : {ols_v1.bic:.2f}")
+print("=" * 50)
+
+# ── Assumption tests ──────────────────────────────────────────────────────────
+dw_v1 = sm.stats.stattools.durbin_watson(resid_ols_v1)
+bp_stat, bp_p, _, _ = het_breuschpagan(resid_ols_v1, X_train_ols_const)
+
+print(f"\n  Residual skew         : {pd.Series(resid_ols_v1).skew():.3f}")
+print(f"  Residual kurt         : {pd.Series(resid_ols_v1).kurt():.3f}")
+print(f"  Residual std          : {resid_ols_v1.std():.4f}")
+print(f"  Durbin-Watson         : {dw_v1:.4f}  (2.0 = no autocorrelation)")
+print(f"  Breusch-Pagan p-value : {bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})")
+
+# ── Top significant coefficients ──────────────────────────────────────────────
+coef_df_ols_v1 = pd.DataFrame({
+    'coefficient': ols_v1.params,
+    'p_value'    : ols_v1.pvalues,
+    'std_err'    : ols_v1.bse
+}).drop('const', errors='ignore')
+
+coef_df_ols_v1 = coef_df_ols_v1[coef_df_ols_v1['p_value'] < 0.05].sort_values(
+    'coefficient', key=abs, ascending=False)
+
+print(f"\nSignificant coefficients (p < 0.05): {len(coef_df_ols_v1)}")
+print(coef_df_ols_v1.head(20).to_string())
+
+# ── Diagnostic plots ──────────────────────────────────────────────────────────
+fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+axes[0,0].scatter(y_pred_ols_v1_train, resid_ols_v1, alpha=0.2, s=8, color="#2980b9")
+axes[0,0].axhline(0, color="red", linestyle="--")
+axes[0,0].set_title("Residuals vs Fitted")
+axes[0,0].set_xlabel("Fitted Values")
+axes[0,0].set_ylabel("Residuals")
+
+(osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid_ols_v1, dist="norm")
+axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+axes[0,1].set_title("Normal Q-Q Plot")
+axes[0,1].set_xlabel("Theoretical Quantiles")
+axes[0,1].set_ylabel("Sample Quantiles")
+
+sqrt_abs_resid = np.sqrt(np.abs(resid_ols_v1))
+axes[0,2].scatter(y_pred_ols_v1_train, sqrt_abs_resid, alpha=0.2, s=8, color="#27ae60")
+axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+axes[0,2].set_xlabel("Fitted Values")
+axes[0,2].set_ylabel("√|Residuals|")
+
+seg_col_ols = [c for c in X_train_ols.columns if c.startswith("segment_")]
+if seg_col_ols:
+    seg_labels_ols = pd.Series("Other", index=train_ols.index)
+    seg_labels_ols[X_train_ols[seg_col_ols[0]] == 1] = "Residential"
+else:
+    seg_labels_ols = pd.Series("All", index=train_ols.index)
+
+colors = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+for seg, col in colors.items():
+    mask = seg_labels_ols == seg
+    if mask.any():
+        axes[1,0].scatter(y_pred_ols_v1_train[mask], resid_ols_v1[mask],
+                          alpha=0.2, s=8, color=col, label=seg)
+axes[1,0].axhline(0, color="red", linestyle="--")
+axes[1,0].set_title("Residuals vs Fitted by Segment")
+axes[1,0].set_xlabel("Fitted Values")
+axes[1,0].set_ylabel("Residuals")
+axes[1,0].legend()
+
+axes[1,1].hist(resid_ols_v1, bins=60, color="#9b59b6", edgecolor="white")
+axes[1,1].axvline(0, color="red", linestyle="--")
+axes[1,1].set_title("Residual Distribution")
+axes[1,1].set_xlabel("Residuals")
+axes[1,1].set_ylabel("Count")
+
+axes[1,2].scatter(y_test_ols, y_pred_ols_v1_test, alpha=0.2, s=8, color="#e67e22")
+axes[1,2].plot([y_test_ols.min(), y_test_ols.max()],
+               [y_test_ols.min(), y_test_ols.max()], color="red", linestyle="--")
+axes[1,2].set_title("Actual vs Predicted (Test Set)")
+axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+plt.suptitle("OLS v1 — Base Model Full Diagnostics", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+## PCR
+
+```{python}
+#| label: pcr_v1
+
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import KFold
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+import statsmodels.api as sm
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PCR helper function — reused by both v1 and v2
+# ══════════════════════════════════════════════════════════════════════════════
+def run_pcr(X_train, X_test, y_train, y_test, label, max_components=None):
+    # ── Scale ─────────────────────────────────────────────────────────────────
+    scaler         = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled  = scaler.transform(X_test)
+
+    # ── PCA ───────────────────────────────────────────────────────────────────
+    max_comp     = min(X_train_scaled.shape) if max_components is None else max_components
+    pca_full     = PCA(n_components=max_comp, random_state=2026)
+    Z_train_full = pca_full.fit_transform(X_train_scaled)
+    Z_test_full  = pca_full.transform(X_test_scaled)
+
+    # ── Variance summary ──────────────────────────────────────────────────────
+    cum_var = np.cumsum(pca_full.explained_variance_ratio_)
+    n_90    = np.searchsorted(cum_var, 0.90) + 1
+    n_95    = np.searchsorted(cum_var, 0.95) + 1
+    n_99    = np.searchsorted(cum_var, 0.99) + 1
+    print(f"  Components for 90% variance : {n_90}")
+    print(f"  Components for 95% variance : {n_95}")
+    print(f"  Components for 99% variance : {n_99}")
+
+    # ── Select components at 90% variance threshold ───────────────────────────
+    best_n = n_90
+    print(f"  Selected n_components (90%) : {best_n}")
+
+    # ── Final model ───────────────────────────────────────────────────────────
+    Z_train  = Z_train_full[:, :best_n]
+    Z_test   = Z_test_full[:, :best_n]
+    lr_final = LinearRegression()
+    lr_final.fit(Z_train, y_train)
+
+    y_pred_train = lr_final.predict(Z_train)
+    y_pred_test  = lr_final.predict(Z_test)
+    resid        = y_train.values - y_pred_train
+
+    ss_res   = ((y_test.values - y_pred_test) ** 2).sum()
+    ss_tot   = ((y_test.values - y_test.values.mean()) ** 2).sum()
+    r2_test  = 1 - ss_res / ss_tot
+    r2_train = r2_score(y_train, y_pred_train)
+
+    # ── Print results ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Best n_components  : {best_n}")
+    print(f"  Train R²           : {r2_train:.4f}")
+    print(f"  Test  R²           : {r2_test:.4f}")
+    print(f"  Train-Test gap     : {r2_train - r2_test:.4f}")
+    print("=" * 55)
+
+    # ── Assumption tests ──────────────────────────────────────────────────────
+    dw = sm.stats.stattools.durbin_watson(resid)
+    try:
+        _, bp_p, _, _ = het_breuschpagan(
+            resid, np.column_stack([np.ones(len(resid)), Z_train[:, :10]]))
+        bp_result = f"{bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})"
+    except Exception:
+        bp_result = "Could not compute"
+
+    print(f"\n  Residual skew         : {pd.Series(resid).skew():.3f}")
+    print(f"  Residual kurt         : {pd.Series(resid).kurt():.3f}")
+    print(f"  Residual std          : {resid.std():.4f}")
+    print(f"  Durbin-Watson         : {dw:.4f}  (2.0 = no autocorrelation)")
+    print(f"  Breusch-Pagan p-value : {bp_result}")
+
+    # ── Scree plot ────────────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(range(1, len(cum_var) + 1), cum_var, marker='o', markersize=3, color="#2980b9")
+    ax.axhline(0.90, color="orange", linestyle="--", alpha=0.7, label="90%")
+    ax.axhline(0.95, color="red",    linestyle="--", alpha=0.7, label="95%")
+    ax.axvline(best_n, color="green", linestyle="--", alpha=0.7, label=f"Selected n={best_n}")
+    ax.set_title("Cumulative Explained Variance")
+    ax.set_xlabel("Number of Components")
+    ax.set_ylabel("Cumulative Variance")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    plt.suptitle(f"{label} — Component Selection", fontsize=13)
+    plt.tight_layout()
+    plt.show()
+
+    # ── Diagnostic plots ──────────────────────────────────────────────────────
+    seg_col = [c for c in X_train.columns if c.startswith("segment_")]
+    if seg_col:
+        seg_labels = pd.Series("Other", index=X_train.index)
+        seg_labels[X_train[seg_col[0]] == 1] = "Residential"
+    else:
+        seg_labels = pd.Series("All", index=X_train.index)
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+    axes[0,0].scatter(y_pred_train, resid, alpha=0.2, s=8, color="#2980b9")
+    axes[0,0].axhline(0, color="red", linestyle="--")
+    axes[0,0].set_title("Residuals vs Fitted")
+    axes[0,0].set_xlabel("Fitted Values")
+    axes[0,0].set_ylabel("Residuals")
+
+    (osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid, dist="norm")
+    axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+    axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+    axes[0,1].set_title("Normal Q-Q Plot")
+    axes[0,1].set_xlabel("Theoretical Quantiles")
+    axes[0,1].set_ylabel("Sample Quantiles")
+
+    axes[0,2].scatter(y_pred_train, np.sqrt(np.abs(resid)),
+                      alpha=0.2, s=8, color="#27ae60")
+    axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+    axes[0,2].set_xlabel("Fitted Values")
+    axes[0,2].set_ylabel("√|Residuals|")
+
+    colors_map = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+    for seg, col in colors_map.items():
+        mask = seg_labels == seg
+        if mask.any():
+            axes[1,0].scatter(y_pred_train[mask], resid[mask],
+                              alpha=0.2, s=8, color=col, label=seg)
+    axes[1,0].axhline(0, color="red", linestyle="--")
+    axes[1,0].set_title("Residuals vs Fitted by Segment")
+    axes[1,0].set_xlabel("Fitted Values")
+    axes[1,0].set_ylabel("Residuals")
+    axes[1,0].legend()
+
+    axes[1,1].hist(resid, bins=60, color="#9b59b6", edgecolor="white")
+    axes[1,1].axvline(0, color="red", linestyle="--")
+    axes[1,1].set_title("Residual Distribution")
+    axes[1,1].set_xlabel("Residuals")
+    axes[1,1].set_ylabel("Count")
+
+    axes[1,2].scatter(y_test, y_pred_test, alpha=0.2, s=8, color="#e67e22")
+    axes[1,2].plot([y_test.min(), y_test.max()],
+                   [y_test.min(), y_test.max()], color="red", linestyle="--")
+    axes[1,2].set_title("Actual vs Predicted (Test Set)")
+    axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+    axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+    plt.suptitle(f"{label} — Full Diagnostics", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    return y_pred_train, y_pred_test, resid, best_n, r2_train, r2_test, cum_var
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PCR v1 — Baseline
+# ══════════════════════════════════════════════════════════════════════════════
+print("=" * 55)
+print("  PCR v1 — Baseline")
+print("=" * 55)
+
+(y_pred_pcr_v1_train, y_pred_pcr_v1_test,
+ resid_pcr_v1, best_n_v1,
+ r2_train_pcr_v1, r2_test_pcr_v1,
+ cum_var_v1) = run_pcr(
+    X_train_ols, X_test_ols,
+    y_train_ols, y_test_ols,
+    label="PCR v1 — Baseline"
+)
+
+```
+
+```{python}
+#| label: pcr_v2
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PCR v2 — NbhdCode2 + Segment Interactions
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Build interaction terms ───────────────────────────────────────────────────
+nbhd_dummies_pcr     = [c for c in X_train_ols.columns if c.startswith("NbhdCode2_")]
+seg_dummies_pcr      = [c for c in X_train_ols.columns if c.startswith("segment_")]
+interact_dummies_pcr = nbhd_dummies_pcr + seg_dummies_pcr
+numeric_preds_pcr    = [c for c in X_train_ols.columns if c not in interact_dummies_pcr]
+
+print(f"Building PCR v2 interactions:")
+print(f"  NbhdCode2 dummies  : {len(nbhd_dummies_pcr)}")
+print(f"  Segment dummies    : {len(seg_dummies_pcr)}")
+print(f"  Numeric predictors : {len(numeric_preds_pcr)}")
+print(f"  Total interactions : {len(interact_dummies_pcr) * len(numeric_preds_pcr)}")
+
+train_interactions_pcr = {}
+test_interactions_pcr  = {}
+
+for dummy_col in interact_dummies_pcr:
+    for num_col in numeric_preds_pcr:
+        col_name = f"{dummy_col}_x_{num_col}".replace(" ", "_")
+        train_interactions_pcr[col_name] = X_train_ols[dummy_col] * X_train_ols[num_col]
+        test_interactions_pcr[col_name]  = X_test_ols[dummy_col]  * X_test_ols[num_col]
+
+X_train_pcr_v2 = pd.concat([
+    X_train_ols,
+    pd.DataFrame(train_interactions_pcr, index=X_train_ols.index)
+], axis=1)
+X_test_pcr_v2 = pd.concat([
+    X_test_ols,
+    pd.DataFrame(test_interactions_pcr, index=X_test_ols.index)
+], axis=1)
+X_test_pcr_v2 = X_test_pcr_v2.reindex(columns=X_train_pcr_v2.columns, fill_value=0)
+
+# ── Drop zero variance columns ────────────────────────────────────────────────
+zero_var       = X_train_pcr_v2.var() == 0
+X_train_pcr_v2 = X_train_pcr_v2.loc[:, ~zero_var]
+X_test_pcr_v2  = X_test_pcr_v2.reindex(columns=X_train_pcr_v2.columns, fill_value=0)
+
+print(f"  Final predictor count: {X_train_pcr_v2.shape[1]}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+print("\n" + "=" * 55)
+print("  PCR v2 — NbhdCode2 + Segment Interactions")
+print("=" * 55)
+
+(y_pred_pcr_v2_train, y_pred_pcr_v2_test,
+ resid_pcr_v2, best_n_v2,
+ r2_train_pcr_v2, r2_test_pcr_v2,
+ cum_var_v2) = run_pcr(
+    X_train_pcr_v2, X_test_pcr_v2,
+    y_train_ols, y_test_ols,
+    label="PCR v2 — NbhdCode2 + Segment Interactions"
+)
+
+# ── Final comparison ──────────────────────────────────────────────────────────
+print("\n" + "=" * 55)
+print("  PCR Summary")
+print("=" * 55)
+print(f"  {'Model':<45} {'Test R²':>8}  {'Gap':>8}")
+print(f"  {'-'*61}")
+print(f"  {'PCR v1 — Baseline':<45} {r2_test_pcr_v1:>8.4f}  {r2_train_pcr_v1 - r2_test_pcr_v1:>8.4f}")
+print(f"  {'PCR v2 — NbhdCode2 + Segment Interactions':<45} {r2_test_pcr_v2:>8.4f}  {r2_train_pcr_v2 - r2_test_pcr_v2:>8.4f}")
+print("=" * 55)
+
+```
+
+## PLS
+
+```{python}
+#| label: pls_v1
+
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.model_selection import KFold
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+import statsmodels.api as sm
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PLS helper function — reused by both v1 and v2
+# ══════════════════════════════════════════════════════════════════════════════
+def run_pls(X_train, X_test, y_train, y_test, label, max_components=30):
+    # ── Scale ─────────────────────────────────────────────────────────────────
+    scaler         = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled  = scaler.transform(X_test)
+
+    # ── Cross-validated component selection ───────────────────────────────────
+    kf         = KFold(n_splits=5, shuffle=True, random_state=2026)
+    candidates = list(range(1, max_components + 1))
+    cv_r2      = []
+
+    print(f"  Running 5-fold CV over {len(candidates)} component counts...")
+    for n in candidates:
+        fold_r2 = []
+        for tr_idx, val_idx in kf.split(X_train_scaled):
+            pls = PLSRegression(n_components=n, max_iter=500)
+            pls.fit(X_train_scaled[tr_idx], y_train.iloc[tr_idx])
+            fold_r2.append(r2_score(y_train.iloc[val_idx],
+                                    pls.predict(X_train_scaled[val_idx]).flatten()))
+        cv_r2.append(np.mean(fold_r2))
+
+    best_n  = candidates[np.argmax(cv_r2)]
+    best_cv = max(cv_r2)
+    print(f"  Best n_components (CV) : {best_n}  (CV R² = {best_cv:.4f})")
+
+    # ── Fit final model ───────────────────────────────────────────────────────
+    pls_final = PLSRegression(n_components=best_n, max_iter=500)
+    pls_final.fit(X_train_scaled, y_train)
+
+    y_pred_train = pls_final.predict(X_train_scaled).flatten()
+    y_pred_test  = pls_final.predict(X_test_scaled).flatten()
+    resid        = y_train.values - y_pred_train
+
+    ss_res   = ((y_test.values - y_pred_test) ** 2).sum()
+    ss_tot   = ((y_test.values - y_test.values.mean()) ** 2).sum()
+    r2_test  = 1 - ss_res / ss_tot
+    r2_train = r2_score(y_train, y_pred_train)
+
+    # ── Print results ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Best n_components  : {best_n}")
+    print(f"  Train R²           : {r2_train:.4f}")
+    print(f"  Test  R²           : {r2_test:.4f}")
+    print(f"  Train-Test gap     : {r2_train - r2_test:.4f}")
+    print("=" * 55)
+
+    # ── Assumption tests ──────────────────────────────────────────────────────
+    dw = sm.stats.stattools.durbin_watson(resid)
+    try:
+        _, bp_p, _, _ = het_breuschpagan(
+            resid, np.column_stack([np.ones(len(resid)), X_train_scaled[:, :10]]))
+        bp_result = f"{bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})"
+    except Exception:
+        bp_result = "Could not compute"
+
+    print(f"\n  Residual skew         : {pd.Series(resid).skew():.3f}")
+    print(f"  Residual kurt         : {pd.Series(resid).kurt():.3f}")
+    print(f"  Residual std          : {resid.std():.4f}")
+    print(f"  Durbin-Watson         : {dw:.4f}  (2.0 = no autocorrelation)")
+    print(f"  Breusch-Pagan p-value : {bp_result}")
+
+    # ── CV R² plot ────────────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(candidates, cv_r2, marker='o', markersize=4, color="#9b59b6")
+    ax.axvline(best_n, color="green", linestyle="--",
+               label=f"Best n={best_n} (R²={best_cv:.4f})")
+    ax.set_title("CV R² by Number of PLS Components")
+    ax.set_xlabel("Number of Components")
+    ax.set_ylabel("5-Fold CV R²")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    plt.suptitle(f"{label} — Component Selection", fontsize=13)
+    plt.tight_layout()
+    plt.show()
+
+    # ── Diagnostic plots ──────────────────────────────────────────────────────
+    seg_col = [c for c in X_train.columns if c.startswith("segment_")]
+    if seg_col:
+        seg_labels = pd.Series("Other", index=X_train.index)
+        seg_labels[X_train[seg_col[0]] == 1] = "Residential"
+    else:
+        seg_labels = pd.Series("All", index=X_train.index)
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+    axes[0,0].scatter(y_pred_train, resid, alpha=0.2, s=8, color="#2980b9")
+    axes[0,0].axhline(0, color="red", linestyle="--")
+    axes[0,0].set_title("Residuals vs Fitted")
+    axes[0,0].set_xlabel("Fitted Values")
+    axes[0,0].set_ylabel("Residuals")
+
+    (osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid, dist="norm")
+    axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+    axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+    axes[0,1].set_title("Normal Q-Q Plot")
+    axes[0,1].set_xlabel("Theoretical Quantiles")
+    axes[0,1].set_ylabel("Sample Quantiles")
+
+    axes[0,2].scatter(y_pred_train, np.sqrt(np.abs(resid)),
+                      alpha=0.2, s=8, color="#27ae60")
+    axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+    axes[0,2].set_xlabel("Fitted Values")
+    axes[0,2].set_ylabel("√|Residuals|")
+
+    colors_map = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+    for seg, col in colors_map.items():
+        mask = seg_labels == seg
+        if mask.any():
+            axes[1,0].scatter(y_pred_train[mask], resid[mask],
+                              alpha=0.2, s=8, color=col, label=seg)
+    axes[1,0].axhline(0, color="red", linestyle="--")
+    axes[1,0].set_title("Residuals vs Fitted by Segment")
+    axes[1,0].set_xlabel("Fitted Values")
+    axes[1,0].set_ylabel("Residuals")
+    axes[1,0].legend()
+
+    axes[1,1].hist(resid, bins=60, color="#9b59b6", edgecolor="white")
+    axes[1,1].axvline(0, color="red", linestyle="--")
+    axes[1,1].set_title("Residual Distribution")
+    axes[1,1].set_xlabel("Residuals")
+    axes[1,1].set_ylabel("Count")
+
+    axes[1,2].scatter(y_test, y_pred_test, alpha=0.2, s=8, color="#e67e22")
+    axes[1,2].plot([y_test.min(), y_test.max()],
+                   [y_test.min(), y_test.max()], color="red", linestyle="--")
+    axes[1,2].set_title("Actual vs Predicted (Test Set)")
+    axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+    axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+    plt.suptitle(f"{label} — Full Diagnostics", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    return y_pred_train, y_pred_test, resid, best_n, r2_train, r2_test, cv_r2, candidates
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PLS v1 — Baseline
+# ══════════════════════════════════════════════════════════════════════════════
+print("=" * 55)
+print("  PLS v1 — Baseline")
+print("=" * 55)
+
+(y_pred_pls_v1_train, y_pred_pls_v1_test,
+ resid_pls_v1, best_n_pls_v1,
+ r2_train_pls_v1, r2_test_pls_v1,
+ cv_r2_pls_v1, candidates_pls_v1) = run_pls(
+    X_train_ols, X_test_ols,
+    y_train_ols, y_test_ols,
+    label="PLS v1 — Baseline"
+)
+
+```
+
+```{python}
+#| label: pls_v2
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PLS v2 — NbhdCode2 + Segment Interactions
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Build interaction terms ───────────────────────────────────────────────────
+# Reuse X_train_pcr_v2 / X_test_pcr_v2 already built in the PCR v2 chunk
+# (same feature set — NbhdCode2 + segment interactions with all numerics)
+
+print(f"PLS v2 feature matrix: {X_train_pcr_v2.shape[1]} predictors")
+
+print("\n" + "=" * 55)
+print("  PLS v2 — NbhdCode2 + Segment Interactions")
+print("=" * 55)
+
+(y_pred_pls_v2_train, y_pred_pls_v2_test,
+ resid_pls_v2, best_n_pls_v2,
+ r2_train_pls_v2, r2_test_pls_v2,
+ cv_r2_pls_v2, candidates_pls_v2) = run_pls(
+    X_train_pcr_v2, X_test_pcr_v2,
+    y_train_ols, y_test_ols,
+    label="PLS v2 — NbhdCode2 + Segment Interactions"
+)
+
+# ── Final comparison ──────────────────────────────────────────────────────────
+print("\n" + "=" * 55)
+print("  PLS Summary")
+print("=" * 55)
+print(f"  {'Model':<45} {'Test R²':>8}  {'Gap':>8}")
+print(f"  {'-'*61}")
+print(f"  {'PLS v1 — Baseline':<45} {r2_test_pls_v1:>8.4f}  {r2_train_pls_v1 - r2_test_pls_v1:>8.4f}")
+print(f"  {'PLS v2 — NbhdCode2 + Segment Interactions':<45} {r2_test_pls_v2:>8.4f}  {r2_train_pls_v2 - r2_test_pls_v2:>8.4f}")
+print("=" * 55)
+
+```
+
+## ElasticNet
+
+```{python}
+#| label: elasticnet_v1
+
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+import statsmodels.api as sm
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ElasticNet helper function — reused by both v1 and v2
+# ══════════════════════════════════════════════════════════════════════════════
+def run_elasticnet(X_train, X_test, y_train, y_test, label):
+    # ── Scale ─────────────────────────────────────────────────────────────────
+    scaler         = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled  = scaler.transform(X_test)
+
+    # ── Fit ElasticNetCV ──────────────────────────────────────────────────────
+    enet = ElasticNetCV(
+        l1_ratio     = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1.0],
+        alphas       = np.logspace(-4, 1, 50),
+        cv           = 5,
+        max_iter     = 50000,
+        tol          = 1e-3,
+        n_jobs       = -1,
+        random_state = 2026
+    )
+    enet.fit(X_train_scaled, y_train)
+
+    y_pred_train = enet.predict(X_train_scaled)
+    y_pred_test  = enet.predict(X_test_scaled)
+    resid        = y_train.values - y_pred_train
+
+    nonzero  = (enet.coef_ != 0).sum()
+    zeroed   = (enet.coef_ == 0).sum()
+    ss_res   = ((y_test.values - y_pred_test) ** 2).sum()
+    ss_tot   = ((y_test.values - y_test.values.mean()) ** 2).sum()
+    r2_test  = 1 - ss_res / ss_tot
+    r2_train = r2_score(y_train, y_pred_train)
+
+    # ── Print results ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Alpha          : {enet.alpha_:.6f}")
+    print(f"  L1 ratio       : {enet.l1_ratio_:.2f}")
+    print(f"  Non-zero       : {nonzero} / {len(enet.coef_)}  ({zeroed} zeroed out)")
+    print(f"  Train R²       : {r2_train:.4f}")
+    print(f"  Test  R²       : {r2_test:.4f}")
+    print(f"  Train-Test gap : {r2_train - r2_test:.4f}")
+    print("=" * 55)
+
+    # ── Assumption tests ──────────────────────────────────────────────────────
+    dw = sm.stats.stattools.durbin_watson(resid)
+    try:
+        _, bp_p, _, _ = het_breuschpagan(
+            resid, np.column_stack([np.ones(len(resid)), X_train_scaled[:, :10]]))
+        bp_result = f"{bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})"
+    except Exception:
+        bp_result = "Could not compute"
+
+    print(f"\n  Residual skew         : {pd.Series(resid).skew():.3f}")
+    print(f"  Residual kurt         : {pd.Series(resid).kurt():.3f}")
+    print(f"  Residual std          : {resid.std():.4f}")
+    print(f"  Durbin-Watson         : {dw:.4f}  (2.0 = no autocorrelation)")
+    print(f"  Breusch-Pagan p-value : {bp_result}")
+
+    # ── Top surviving coefficients ────────────────────────────────────────────
+    coef_df = pd.DataFrame({
+        'feature'    : X_train.columns,
+        'coefficient': enet.coef_
+    }).query('coefficient != 0').sort_values('coefficient', key=abs, ascending=False)
+
+    print(f"\nTop 20 surviving coefficients (of {nonzero} non-zero):")
+    print(coef_df.head(20).to_string())
+
+    # ── Diagnostic plots ──────────────────────────────────────────────────────
+    seg_col = [c for c in X_train.columns if c.startswith("segment_")]
+    if seg_col:
+        seg_labels = pd.Series("Other", index=X_train.index)
+        seg_labels[X_train[seg_col[0]] == 1] = "Residential"
+    else:
+        seg_labels = pd.Series("All", index=X_train.index)
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+    axes[0,0].scatter(y_pred_train, resid, alpha=0.2, s=8, color="#2980b9")
+    axes[0,0].axhline(0, color="red", linestyle="--")
+    axes[0,0].set_title("Residuals vs Fitted")
+    axes[0,0].set_xlabel("Fitted Values")
+    axes[0,0].set_ylabel("Residuals")
+
+    (osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid, dist="norm")
+    axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+    axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+    axes[0,1].set_title("Normal Q-Q Plot")
+    axes[0,1].set_xlabel("Theoretical Quantiles")
+    axes[0,1].set_ylabel("Sample Quantiles")
+
+    axes[0,2].scatter(y_pred_train, np.sqrt(np.abs(resid)),
+                      alpha=0.2, s=8, color="#27ae60")
+    axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+    axes[0,2].set_xlabel("Fitted Values")
+    axes[0,2].set_ylabel("√|Residuals|")
+
+    colors_map = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+    for seg, col in colors_map.items():
+        mask = seg_labels == seg
+        if mask.any():
+            axes[1,0].scatter(y_pred_train[mask], resid[mask],
+                              alpha=0.2, s=8, color=col, label=seg)
+    axes[1,0].axhline(0, color="red", linestyle="--")
+    axes[1,0].set_title("Residuals vs Fitted by Segment")
+    axes[1,0].set_xlabel("Fitted Values")
+    axes[1,0].set_ylabel("Residuals")
+    axes[1,0].legend()
+
+    axes[1,1].hist(resid, bins=60, color="#9b59b6", edgecolor="white")
+    axes[1,1].axvline(0, color="red", linestyle="--")
+    axes[1,1].set_title("Residual Distribution")
+    axes[1,1].set_xlabel("Residuals")
+    axes[1,1].set_ylabel("Count")
+
+    axes[1,2].scatter(y_test, y_pred_test, alpha=0.2, s=8, color="#e67e22")
+    axes[1,2].plot([y_test.min(), y_test.max()],
+                   [y_test.min(), y_test.max()], color="red", linestyle="--")
+    axes[1,2].set_title("Actual vs Predicted (Test Set)")
+    axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+    axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+    plt.suptitle(f"{label} — Full Diagnostics", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    return y_pred_train, y_pred_test, resid, r2_train, r2_test, enet, coef_df
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ElasticNet v1 — Baseline
+# ══════════════════════════════════════════════════════════════════════════════
+print("=" * 55)
+print("  ElasticNet v1 — Baseline")
+print("=" * 55)
+
+(y_pred_en_v1_train, y_pred_en_v1_test,
+ resid_en_v1, r2_train_en_v1,
+ r2_test_en_v1, enet_v1, coef_df_en_v1) = run_elasticnet(
+    X_train_ols, X_test_ols,
+    y_train_ols, y_test_ols,
+    label="ElasticNet v1 — Baseline"
+)
+
+```
+
+```{python}
+#| label: elasticnet_v2
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ElasticNet v2 — NbhdCode2 + Segment Interactions
+# ══════════════════════════════════════════════════════════════════════════════
+# Reuses X_train_pcr_v2 / X_test_pcr_v2 already built in PCR v2 chunk
+
+print(f"ElasticNet v2 feature matrix: {X_train_pcr_v2.shape[1]} predictors")
+
+print("\n" + "=" * 55)
+print("  ElasticNet v2 — NbhdCode2 + Segment Interactions")
+print("=" * 55)
+
+(y_pred_en_v2_train, y_pred_en_v2_test,
+ resid_en_v2, r2_train_en_v2,
+ r2_test_en_v2, enet_v2, coef_df_en_v2) = run_elasticnet(
+    X_train_pcr_v2, X_test_pcr_v2,
+    y_train_ols, y_test_ols,
+    label="ElasticNet v2 — NbhdCode2 + Segment Interactions"
+)
+
+# ── Final comparison ──────────────────────────────────────────────────────────
+print("\n" + "=" * 55)
+print("  ElasticNet Summary")
+print("=" * 55)
+print(f"  {'Model':<45} {'Test R²':>8}  {'Gap':>8}")
+print(f"  {'-'*61}")
+print(f"  {'ElasticNet v1 — Baseline':<45} {r2_test_en_v1:>8.4f}  {r2_train_en_v1 - r2_test_en_v1:>8.4f}")
+print(f"  {'ElasticNet v2 — NbhdCode2 + Segment Interactions':<45} {r2_test_en_v2:>8.4f}  {r2_train_en_v2 - r2_test_en_v2:>8.4f}")
+print("=" * 55)
+
+```
+
+## Quantile Regression
+
+```{python}
+#| label: quantile_v1
+
+import statsmodels.formula.api as smf
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+import statsmodels.api as sm
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Quantile Regression helper function — reused by both v1 and v2
+# ══════════════════════════════════════════════════════════════════════════════
+def run_quantile(X_train, X_test, y_train, y_test, label, quantiles=[0.10, 0.50, 0.90]):
+    """
+    Fits quantile regression at each specified quantile.
+    Primary model for R² reporting is the median (q=0.50).
+    """
+    # ── Build formula-ready dataframes ────────────────────────────────────────
+    # statsmodels QuantReg needs a matrix interface — use sm.add_constant
+    X_train_const = sm.add_constant(X_train.values)
+    X_test_const  = sm.add_constant(X_test.values)
+
+    # Align constant column in test
+    if X_train_const.shape[1] != X_test_const.shape[1]:
+        X_test_const = np.column_stack([np.ones(len(X_test)), X_test.values])
+
+    results   = {}
+    models    = {}
+
+    for q in quantiles:
+        print(f"  Fitting quantile q={q}...")
+        qr = sm.QuantReg(y_train.values, X_train_const)
+        res = qr.fit(q=q, max_iter=1000)
+        models[q]  = res
+
+        y_pred_train = res.predict(X_train_const)
+        y_pred_test  = res.predict(X_test_const)
+
+        ss_res  = ((y_test.values - y_pred_test) ** 2).sum()
+        ss_tot  = ((y_test.values - y_test.values.mean()) ** 2).sum()
+        r2_test = 1 - ss_res / ss_tot
+        r2_train = r2_score(y_train, y_pred_train)
+
+        results[q] = {
+            'y_pred_train': y_pred_train,
+            'y_pred_test' : y_pred_test,
+            'r2_train'    : r2_train,
+            'r2_test'     : r2_test,
+            'resid'       : y_train.values - y_pred_train
+        }
+
+    # ── Print results ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    for q in quantiles:
+        r = results[q]
+        print(f"  q={q:.2f}  Train R²: {r['r2_train']:.4f}  "
+              f"Test R²: {r['r2_test']:.4f}  "
+              f"Gap: {r['r2_train'] - r['r2_test']:.4f}")
+    print("=" * 55)
+
+    # ── Assumption tests on median model ─────────────────────────────────────
+    resid_med = results[0.50]['resid']
+    dw        = sm.stats.stattools.durbin_watson(resid_med)
+    try:
+        _, bp_p, _, _ = het_breuschpagan(
+            resid_med, np.column_stack([np.ones(len(resid_med)),
+                                        X_train_const[:, 1:11]]))
+        bp_result = f"{bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})"
+    except Exception:
+        bp_result = "Could not compute"
+
+    print(f"\n  Median model (q=0.50) assumption tests:")
+    print(f"  Residual skew         : {pd.Series(resid_med).skew():.3f}")
+    print(f"  Residual kurt         : {pd.Series(resid_med).kurt():.3f}")
+    print(f"  Residual std          : {resid_med.std():.4f}")
+    print(f"  Durbin-Watson         : {dw:.4f}  (2.0 = no autocorrelation)")
+    print(f"  Breusch-Pagan p-value : {bp_result}")
+
+    # ── Top coefficients for median model ─────────────────────────────────────
+    coef_names = ['const'] + list(X_train.columns)
+    coef_df = pd.DataFrame({
+        'feature'    : coef_names,
+        'coefficient': models[0.50].params,
+        'p_value'    : models[0.50].pvalues
+    }).query('feature != "const"')
+    coef_df = coef_df[coef_df['p_value'] < 0.05].sort_values(
+        'coefficient', key=abs, ascending=False)
+
+    print(f"\n  Significant coefficients at q=0.50 (p < 0.05): {len(coef_df)}")
+    print(coef_df.head(20).to_string())
+
+    # ── Segment labels ────────────────────────────────────────────────────────
+    seg_col = [c for c in X_train.columns if c.startswith("segment_")]
+    if seg_col:
+        seg_labels = pd.Series("Other", index=X_train.index)
+        seg_labels[X_train[seg_col[0]] == 1] = "Residential"
+    else:
+        seg_labels = pd.Series("All", index=X_train.index)
+
+    # ── Diagnostic plots for median model ────────────────────────────────────
+    y_pred_med_train = results[0.50]['y_pred_train']
+    y_pred_med_test  = results[0.50]['y_pred_test']
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+    axes[0,0].scatter(y_pred_med_train, resid_med, alpha=0.2, s=8, color="#2980b9")
+    axes[0,0].axhline(0, color="red", linestyle="--")
+    axes[0,0].set_title("Residuals vs Fitted (q=0.50)")
+    axes[0,0].set_xlabel("Fitted Values")
+    axes[0,0].set_ylabel("Residuals")
+
+    (osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid_med, dist="norm")
+    axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+    axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+    axes[0,1].set_title("Normal Q-Q Plot (q=0.50)")
+    axes[0,1].set_xlabel("Theoretical Quantiles")
+    axes[0,1].set_ylabel("Sample Quantiles")
+
+    axes[0,2].scatter(y_pred_med_train, np.sqrt(np.abs(resid_med)),
+                      alpha=0.2, s=8, color="#27ae60")
+    axes[0,2].set_title("Scale-Location (q=0.50)")
+    axes[0,2].set_xlabel("Fitted Values")
+    axes[0,2].set_ylabel("√|Residuals|")
+
+    colors_map = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+    for seg, col in colors_map.items():
+        mask = seg_labels == seg
+        if mask.any():
+            axes[1,0].scatter(y_pred_med_train[mask], resid_med[mask],
+                              alpha=0.2, s=8, color=col, label=seg)
+    axes[1,0].axhline(0, color="red", linestyle="--")
+    axes[1,0].set_title("Residuals vs Fitted by Segment (q=0.50)")
+    axes[1,0].set_xlabel("Fitted Values")
+    axes[1,0].set_ylabel("Residuals")
+    axes[1,0].legend()
+
+    axes[1,1].hist(resid_med, bins=60, color="#9b59b6", edgecolor="white")
+    axes[1,1].axvline(0, color="red", linestyle="--")
+    axes[1,1].set_title("Residual Distribution (q=0.50)")
+    axes[1,1].set_xlabel("Residuals")
+    axes[1,1].set_ylabel("Count")
+
+    axes[1,2].scatter(y_test, y_pred_med_test, alpha=0.2, s=8, color="#e67e22")
+    axes[1,2].plot([y_test.min(), y_test.max()],
+                   [y_test.min(), y_test.max()], color="red", linestyle="--")
+    axes[1,2].set_title("Actual vs Predicted — q=0.50 (Test Set)")
+    axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+    axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+    plt.suptitle(f"{label} — Median Model Diagnostics", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    # ── Quantile band plot ────────────────────────────────────────────────────
+    sort_idx = np.argsort(y_test.values)
+    y_test_sorted = y_test.values[sort_idx]
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(y_test_sorted,
+            results[0.50]['y_pred_test'][sort_idx],
+            color="#2980b9", label="q=0.50 (median)", linewidth=1.5)
+    ax.fill_between(
+        y_test_sorted,
+        results[0.10]['y_pred_test'][sort_idx],
+        results[0.90]['y_pred_test'][sort_idx],
+        alpha=0.2, color="#2980b9", label="q=0.10 — q=0.90 band"
+    )
+    ax.plot(y_test_sorted, y_test_sorted,
+            color="red", linestyle="--", label="Perfect prediction")
+    ax.set_title(f"{label} — Prediction Intervals (Test Set)")
+    ax.set_xlabel("Actual ln(Trended_Price)")
+    ax.set_ylabel("Predicted ln(Trended_Price)")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    return results, models
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Quantile Regression v1 — Baseline
+# ══════════════════════════════════════════════════════════════════════════════
+print("=" * 55)
+print("  Quantile Regression v1 — Baseline")
+print("=" * 55)
+
+results_qr_v1, models_qr_v1 = run_quantile(
+    X_train_ols, X_test_ols,
+    y_train_ols, y_test_ols,
+    label="Quantile Regression v1 — Baseline"
+)
+
+r2_test_qr_v1  = results_qr_v1[0.50]['r2_test']
+r2_train_qr_v1 = results_qr_v1[0.50]['r2_train']
+
+```
+
+```{python}
+#| label: quantile_v2
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Quantile Regression v2 — NbhdCode2 + Segment Interactions
+# ══════════════════════════════════════════════════════════════════════════════
+# Reuses X_train_pcr_v2 / X_test_pcr_v2 from PCR v2 chunk
+
+print(f"Quantile v2 feature matrix: {X_train_pcr_v2.shape[1]} predictors")
+print("Note: fitting 3 quantiles × large feature matrix — this may take a few minutes\n")
+
+print("=" * 55)
+print("  Quantile Regression v2 — NbhdCode2 + Segment Interactions")
+print("=" * 55)
+
+results_qr_v2, models_qr_v2 = run_quantile(
+    X_train_pcr_v2, X_test_pcr_v2,
+    y_train_ols, y_test_ols,
+    label="Quantile Regression v2 — NbhdCode2 + Segment Interactions"
+)
+
+r2_test_qr_v2  = results_qr_v2[0.50]['r2_test']
+r2_train_qr_v2 = results_qr_v2[0.50]['r2_train']
+
+# ── Final comparison ──────────────────────────────────────────────────────────
+print("\n" + "=" * 55)
+print("  Quantile Regression Summary (q=0.50 median model)")
+print("=" * 55)
+print(f"  {'Model':<45} {'Test R²':>8}  {'Gap':>8}")
+print(f"  {'-'*61}")
+print(f"  {'QR v1 — Baseline':<45} {r2_test_qr_v1:>8.4f}  {r2_train_qr_v1 - r2_test_qr_v1:>8.4f}")
+print(f"  {'QR v2 — NbhdCode2 + Segment Interactions':<45} {r2_test_qr_v2:>8.4f}  {r2_train_qr_v2 - r2_test_qr_v2:>8.4f}")
+print("=" * 55)
+
+```
+
+## WLS
+
+```{python}
+#| label: wls_v1
+
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+import statsmodels.api as sm
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WLS helper function — reused by both v1 and v2
+# ══════════════════════════════════════════════════════════════════════════════
+def run_wls(X_train, X_test, y_train, y_test, label):
+    X_train_const = sm.add_constant(X_train.values)
+    X_test_const  = np.column_stack([np.ones(len(X_test)), X_test.values])
+
+    # ── Step 1: Use only base predictors for weight estimation ────────────────
+    # For stability, always estimate variance structure from base X_train_ols
+    # regardless of how many predictors the full model has
+    print(f"  Step 1: Estimating variance structure from base predictors...")
+    X_base_const   = sm.add_constant(X_train_ols.values)
+    ols_for_weights = sm.OLS(y_train.values, X_base_const).fit()
+    fitted_for_weights = ols_for_weights.predict(X_base_const)
+    resid_for_weights  = y_train.values - fitted_for_weights
+
+    # ── Step 2: Model log variance vs fitted values ───────────────────────────
+    log_resid_sq   = np.log(resid_for_weights ** 2 + 1e-10)
+    variance_model = sm.OLS(
+        log_resid_sq,
+        sm.add_constant(fitted_for_weights)
+    ).fit()
+
+    # ── Compute weights for train using base fitted values ────────────────────
+    log_var_train  = variance_model.predict(sm.add_constant(fitted_for_weights))
+
+    # For test — use base OLS to get fitted values for weight estimation
+    X_base_test_const = sm.add_constant(X_test_ols.values)
+    fitted_test_base  = ols_for_weights.predict(X_base_test_const)
+    log_var_test      = variance_model.predict(sm.add_constant(fitted_test_base))
+
+    weights_train  = 1.0 / (np.exp(log_var_train) + 1e-10)
+    weights_test   = 1.0 / (np.exp(log_var_test)  + 1e-10)
+    weights_train  = weights_train / weights_train.mean()
+    weights_test   = weights_test  / weights_test.mean()
+
+    # ── Step 3: Fit WLS with full feature set but stable weights ─────────────
+    print(f"  Step 2: Fitting WLS ({X_train_const.shape[1]} predictors)...")
+    wls_model     = sm.WLS(y_train.values, X_train_const, weights=weights_train).fit()
+
+    y_pred_train  = wls_model.predict(X_train_const)
+    y_pred_test   = wls_model.predict(X_test_const)
+    resid         = y_train.values - y_pred_train
+
+    ss_res   = ((y_test.values - y_pred_test) ** 2).sum()
+    ss_tot   = ((y_test.values - y_test.values.mean()) ** 2).sum()
+    r2_test  = 1 - ss_res / ss_tot
+    r2_train = r2_score(y_train, y_pred_train)
+
+    # ── Print results ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 55)
+    print(f"  {label}")
+    print("=" * 55)
+    print(f"  Train R²       : {r2_train:.4f}")
+    print(f"  Test  R²       : {r2_test:.4f}")
+    print(f"  Train-Test gap : {r2_train - r2_test:.4f}")
+    print(f"  AIC            : {wls_model.aic:.2f}")
+    print(f"  BIC            : {wls_model.bic:.2f}")
+    print("=" * 55)
+
+    # ── Assumption tests ──────────────────────────────────────────────────────
+    dw = sm.stats.stattools.durbin_watson(resid)
+    try:
+        _, bp_p, _, _ = het_breuschpagan(
+            resid, np.column_stack([np.ones(len(resid)),
+                                    X_train_const[:, 1:11]]))
+        bp_result = f"{bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})"
+    except Exception:
+        bp_result = "Could not compute"
+
+    print(f"\n  Residual skew         : {pd.Series(resid).skew():.3f}")
+    print(f"  Residual kurt         : {pd.Series(resid).kurt():.3f}")
+    print(f"  Residual std          : {resid.std():.4f}")
+    print(f"  Durbin-Watson         : {dw:.4f}  (2.0 = no autocorrelation)")
+    print(f"  Breusch-Pagan p-value : {bp_result}")
+
+    # ── Top significant coefficients ──────────────────────────────────────────
+    coef_names = ['const'] + list(X_train.columns)
+    coef_df = pd.DataFrame({
+        'feature'    : coef_names,
+        'coefficient': wls_model.params,
+        'p_value'    : wls_model.pvalues
+    }).query('feature != "const"')
+    coef_df = coef_df[coef_df['p_value'] < 0.05].sort_values(
+        'coefficient', key=abs, ascending=False)
+
+    print(f"\n  Significant coefficients (p < 0.05): {len(coef_df)}")
+    print(coef_df.head(20).to_string())
+
+    # ── Weight distribution plot ──────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.scatter(fitted_for_weights, weights_train, alpha=0.2, s=8, color="#2980b9")
+    ax.set_title("WLS Weights vs Fitted Values")
+    ax.set_xlabel("Fitted Values (base OLS)")
+    ax.set_ylabel("Weight")
+    ax.grid(alpha=0.3)
+    plt.suptitle(f"{label} — Weight Structure", fontsize=13)
+    plt.tight_layout()
+    plt.show()
+
+    # ── Diagnostic plots ──────────────────────────────────────────────────────
+    seg_col = [c for c in X_train.columns if c.startswith("segment_")]
+    if seg_col:
+        seg_labels = pd.Series("Other", index=X_train.index)
+        seg_labels[X_train[seg_col[0]] == 1] = "Residential"
+    else:
+        seg_labels = pd.Series("All", index=X_train.index)
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+    axes[0,0].scatter(y_pred_train, resid, alpha=0.2, s=8, color="#2980b9")
+    axes[0,0].axhline(0, color="red", linestyle="--")
+    axes[0,0].set_title("Residuals vs Fitted")
+    axes[0,0].set_xlabel("Fitted Values")
+    axes[0,0].set_ylabel("Residuals")
+
+    (osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid, dist="norm")
+    axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+    axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+    axes[0,1].set_title("Normal Q-Q Plot")
+    axes[0,1].set_xlabel("Theoretical Quantiles")
+    axes[0,1].set_ylabel("Sample Quantiles")
+
+    axes[0,2].scatter(y_pred_train, np.sqrt(np.abs(resid)),
+                      alpha=0.2, s=8, color="#27ae60")
+    axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+    axes[0,2].set_xlabel("Fitted Values")
+    axes[0,2].set_ylabel("√|Residuals|")
+
+    colors_map = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+    for seg, col in colors_map.items():
+        mask = seg_labels == seg
+        if mask.any():
+            axes[1,0].scatter(y_pred_train[mask], resid[mask],
+                              alpha=0.2, s=8, color=col, label=seg)
+    axes[1,0].axhline(0, color="red", linestyle="--")
+    axes[1,0].set_title("Residuals vs Fitted by Segment")
+    axes[1,0].set_xlabel("Fitted Values")
+    axes[1,0].set_ylabel("Residuals")
+    axes[1,0].legend()
+
+    axes[1,1].hist(resid, bins=60, color="#9b59b6", edgecolor="white")
+    axes[1,1].axvline(0, color="red", linestyle="--")
+    axes[1,1].set_title("Residual Distribution")
+    axes[1,1].set_xlabel("Residuals")
+    axes[1,1].set_ylabel("Count")
+
+    axes[1,2].scatter(y_test, y_pred_test, alpha=0.2, s=8, color="#e67e22")
+    axes[1,2].plot([y_test.min(), y_test.max()],
+                   [y_test.min(), y_test.max()], color="red", linestyle="--")
+    axes[1,2].set_title("Actual vs Predicted (Test Set)")
+    axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+    axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+    plt.suptitle(f"{label} — Full Diagnostics", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    return y_pred_train, y_pred_test, resid, r2_train, r2_test, wls_model, coef_df
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WLS v1 — Baseline
+# ══════════════════════════════════════════════════════════════════════════════
+print("=" * 55)
+print("  WLS v1 — Baseline")
+print("=" * 55)
+
+(y_pred_wls_v1_train, y_pred_wls_v1_test,
+ resid_wls_v1, r2_train_wls_v1,
+ r2_test_wls_v1, wls_model_v1,
+ coef_df_wls_v1) = run_wls(
+    X_train_ols, X_test_ols,
+    y_train_ols, y_test_ols,
+    label="WLS v1 — Baseline"
+)
+
+```
+
+```{python}
+#| label: wls_v2
+
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import StandardScaler
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WLS v2 — NbhdCode2 + Segment Interactions (Regularized WLS via ElasticNet)
+# ══════════════════════════════════════════════════════════════════════════════
+# Uses variance-based weights from base OLS (same as v1) but fits the final
+# model with weighted ElasticNetCV to handle the high-dimensional interaction
+# matrix without multicollinearity issues
+
+print("=" * 55)
+print("  WLS v2 — NbhdCode2 + Segment Interactions")
+print("=" * 55)
+
+# ── Step 1: Estimate variance structure from base OLS ─────────────────────────
+print("  Step 1: Estimating variance structure from base predictors...")
+X_base_const        = sm.add_constant(X_train_ols.values)
+X_base_test_const   = sm.add_constant(X_test_ols.values)
+ols_for_weights     = sm.OLS(y_train_ols.values, X_base_const).fit()
+fitted_for_weights  = ols_for_weights.predict(X_base_const)
+resid_for_weights   = y_train_ols.values - fitted_for_weights
+
+log_resid_sq        = np.log(resid_for_weights ** 2 + 1e-10)
+variance_model      = sm.OLS(
+    log_resid_sq,
+    sm.add_constant(fitted_for_weights)
+).fit()
+
+fitted_test_base    = ols_for_weights.predict(X_base_test_const)
+log_var_train       = variance_model.predict(sm.add_constant(fitted_for_weights))
+log_var_test        = variance_model.predict(sm.add_constant(fitted_test_base))
+
+weights_train_v2    = 1.0 / (np.exp(log_var_train) + 1e-10)
+weights_test_v2     = 1.0 / (np.exp(log_var_test)  + 1e-10)
+weights_train_v2    = weights_train_v2 / weights_train_v2.mean()
+weights_test_v2     = weights_test_v2  / weights_test_v2.mean()
+
+print(f"  Weights computed — mean: {weights_train_v2.mean():.4f}  "
+      f"std: {weights_train_v2.std():.4f}  "
+      f"range: [{weights_train_v2.min():.4f}, {weights_train_v2.max():.4f}]")
+
+# ── Step 2: Scale interaction feature matrix ──────────────────────────────────
+print(f"  Step 2: Scaling feature matrix ({X_train_pcr_v2.shape[1]} predictors)...")
+scaler_wls_v2         = StandardScaler()
+X_train_wls_v2_scaled = scaler_wls_v2.fit_transform(X_train_pcr_v2.values)
+X_test_wls_v2_scaled  = scaler_wls_v2.transform(X_test_pcr_v2.values)
+
+# ── Step 3: Weighted ElasticNetCV ─────────────────────────────────────────────
+print("  Step 3: Fitting weighted ElasticNetCV...")
+enet_wls_v2 = ElasticNetCV(
+    l1_ratio     = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1.0],
+    alphas       = np.logspace(-4, 1, 50),
+    cv           = 5,
+    max_iter     = 50000,
+    tol          = 1e-3,
+    n_jobs       = -1,
+    random_state = 2026
+)
+enet_wls_v2.fit(X_train_wls_v2_scaled, y_train_ols,
+                sample_weight=weights_train_v2)
+
+y_pred_wls_v2_train = enet_wls_v2.predict(X_train_wls_v2_scaled)
+y_pred_wls_v2_test  = enet_wls_v2.predict(X_test_wls_v2_scaled)
+resid_wls_v2        = y_train_ols.values - y_pred_wls_v2_train
+
+nonzero_v2 = (enet_wls_v2.coef_ != 0).sum()
+zeroed_v2  = (enet_wls_v2.coef_ == 0).sum()
+
+ss_res          = ((y_test_ols.values - y_pred_wls_v2_test) ** 2).sum()
+ss_tot          = ((y_test_ols.values - y_test_ols.values.mean()) ** 2).sum()
+r2_test_wls_v2  = 1 - ss_res / ss_tot
+r2_train_wls_v2 = r2_score(y_train_ols, y_pred_wls_v2_train)
+
+# ── Print results ─────────────────────────────────────────────────────────────
+print("\n" + "=" * 55)
+print("  WLS v2 — NbhdCode2 + Segment Interactions")
+print("=" * 55)
+print(f"  Alpha          : {enet_wls_v2.alpha_:.6f}")
+print(f"  L1 ratio       : {enet_wls_v2.l1_ratio_:.2f}")
+print(f"  Non-zero       : {nonzero_v2} / {len(enet_wls_v2.coef_)}  ({zeroed_v2} zeroed out)")
+print(f"  Train R²       : {r2_train_wls_v2:.4f}")
+print(f"  Test  R²       : {r2_test_wls_v2:.4f}")
+print(f"  Train-Test gap : {r2_train_wls_v2 - r2_test_wls_v2:.4f}")
+print("=" * 55)
+
+# ── Assumption tests ──────────────────────────────────────────────────────────
+dw_wls_v2 = sm.stats.stattools.durbin_watson(resid_wls_v2)
+try:
+    _, bp_p, _, _ = het_breuschpagan(
+        resid_wls_v2,
+        np.column_stack([np.ones(len(resid_wls_v2)),
+                         X_train_wls_v2_scaled[:, :10]]))
+    bp_result = f"{bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})"
+except Exception:
+    bp_result = "Could not compute"
+
+print(f"\n  Residual skew         : {pd.Series(resid_wls_v2).skew():.3f}")
+print(f"  Residual kurt         : {pd.Series(resid_wls_v2).kurt():.3f}")
+print(f"  Residual std          : {resid_wls_v2.std():.4f}")
+print(f"  Durbin-Watson         : {dw_wls_v2:.4f}  (2.0 = no autocorrelation)")
+print(f"  Breusch-Pagan p-value : {bp_result}")
+
+# ── Top surviving coefficients ────────────────────────────────────────────────
+coef_df_wls_v2 = pd.DataFrame({
+    'feature'    : X_train_pcr_v2.columns,
+    'coefficient': enet_wls_v2.coef_
+}).query('coefficient != 0').sort_values('coefficient', key=abs, ascending=False)
+
+print(f"\nTop 20 surviving coefficients (of {nonzero_v2} non-zero):")
+print(coef_df_wls_v2.head(20).to_string())
+
+# ── Weight distribution plot ──────────────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.scatter(fitted_for_weights, weights_train_v2,
+           alpha=0.2, s=8, color="#2980b9")
+ax.set_title("WLS v2 Weights vs Fitted Values (from base OLS)")
+ax.set_xlabel("Fitted Values")
+ax.set_ylabel("Weight")
+ax.grid(alpha=0.3)
+plt.suptitle("WLS v2 — Weight Structure", fontsize=13)
+plt.tight_layout()
+plt.show()
+
+# ── Diagnostic plots ──────────────────────────────────────────────────────────
+seg_col = [c for c in X_train_pcr_v2.columns if c.startswith("segment_")]
+if seg_col:
+    seg_labels_wls_v2 = pd.Series("Other", index=X_train_pcr_v2.index)
+    seg_labels_wls_v2[X_train_pcr_v2[seg_col[0]] == 1] = "Residential"
+else:
+    seg_labels_wls_v2 = pd.Series("All", index=X_train_pcr_v2.index)
+
+fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+axes[0,0].scatter(y_pred_wls_v2_train, resid_wls_v2,
+                  alpha=0.2, s=8, color="#2980b9")
+axes[0,0].axhline(0, color="red", linestyle="--")
+axes[0,0].set_title("Residuals vs Fitted")
+axes[0,0].set_xlabel("Fitted Values")
+axes[0,0].set_ylabel("Residuals")
+
+(osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid_wls_v2, dist="norm")
+axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+axes[0,1].set_title("Normal Q-Q Plot")
+axes[0,1].set_xlabel("Theoretical Quantiles")
+axes[0,1].set_ylabel("Sample Quantiles")
+
+axes[0,2].scatter(y_pred_wls_v2_train, np.sqrt(np.abs(resid_wls_v2)),
+                  alpha=0.2, s=8, color="#27ae60")
+axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+axes[0,2].set_xlabel("Fitted Values")
+axes[0,2].set_ylabel("√|Residuals|")
+
+colors_map = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+for seg, col in colors_map.items():
+    mask = seg_labels_wls_v2 == seg
+    if mask.any():
+        axes[1,0].scatter(y_pred_wls_v2_train[mask], resid_wls_v2[mask],
+                          alpha=0.2, s=8, color=col, label=seg)
+axes[1,0].axhline(0, color="red", linestyle="--")
+axes[1,0].set_title("Residuals vs Fitted by Segment")
+axes[1,0].set_xlabel("Fitted Values")
+axes[1,0].set_ylabel("Residuals")
+axes[1,0].legend()
+
+axes[1,1].hist(resid_wls_v2, bins=60, color="#9b59b6", edgecolor="white")
+axes[1,1].axvline(0, color="red", linestyle="--")
+axes[1,1].set_title("Residual Distribution")
+axes[1,1].set_xlabel("Residuals")
+axes[1,1].set_ylabel("Count")
+
+axes[1,2].scatter(y_test_ols, y_pred_wls_v2_test,
+                  alpha=0.2, s=8, color="#e67e22")
+axes[1,2].plot([y_test_ols.min(), y_test_ols.max()],
+               [y_test_ols.min(), y_test_ols.max()],
+               color="red", linestyle="--")
+axes[1,2].set_title("Actual vs Predicted (Test Set)")
+axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+plt.suptitle("WLS v2 — NbhdCode2 + Segment Interactions — Full Diagnostics",
+             fontsize=14)
+plt.tight_layout()
+plt.show()
+
+# ── Final comparison ──────────────────────────────────────────────────────────
+print("\n" + "=" * 55)
+print("  WLS Summary")
+print("=" * 55)
+print(f"  {'Model':<45} {'Test R²':>8}  {'Gap':>8}")
+print(f"  {'-'*61}")
+print(f"  {'WLS v1 — Baseline':<45} {r2_test_wls_v1:>8.4f}  {r2_train_wls_v1 - r2_test_wls_v1:>8.4f}")
+print(f"  {'WLS v2 — NbhdCode2 + Segment Interactions':<45} {r2_test_wls_v2:>8.4f}  {r2_train_wls_v2 - r2_test_wls_v2:>8.4f}")
+print("=" * 55)
+
+```
+
+
+
+
+
+
+## GAM
+
+```{python}
+#| label: gam_v1
+
+from pygam import LinearGAM, s
+from functools import reduce
+import operator
+from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+import statsmodels.api as sm
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GAM v1 — Two-Stage Hybrid (ElasticNet + Splines)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Dummy encode categoricals from existing train/test split ──────────────────
+DUMMY_COLS = ['PropTypeDescription', 'SpecificPropTypeDescription',
+              'NbhdCode2', 'Main_StyleDesc', 'segment']
+
+train_v1 = train.copy()
+test_v1  = test.copy()
+
+for col in DUMMY_COLS:
+    if col in train_v1.columns:
+        # Fit dummies on train, apply same columns to test
+        train_dummies = pd.get_dummies(train_v1[col], prefix=col, drop_first=True, dtype=int)
+        test_dummies  = pd.get_dummies(test_v1[col],  prefix=col, drop_first=True, dtype=int)
+        # Align test to train columns
+        test_dummies  = test_dummies.reindex(columns=train_dummies.columns, fill_value=0)
+        train_v1 = pd.concat([train_v1.drop(columns=col), train_dummies], axis=1)
+        test_v1  = pd.concat([test_v1.drop(columns=col),  test_dummies],  axis=1)
+
+train_v1 = train_v1.fillna(0)
+test_v1  = test_v1.fillna(0)
+
+EXCLUDE    = ["ln_Trended_Price"]
+X_train_v1 = train_v1.select_dtypes(include=[np.number]).drop(columns=EXCLUDE, errors="ignore")
+X_test_v1  = test_v1.select_dtypes(include=[np.number]).drop(columns=EXCLUDE, errors="ignore")
+X_test_v1  = X_test_v1.reindex(columns=X_train_v1.columns, fill_value=0)
+y_train_v1 = train["ln_Trended_Price"]
+y_test_v1  = test["ln_Trended_Price"]
+
+print(f"Train : {X_train_v1.shape[0]} rows | {X_train_v1.shape[1]} predictors")
+print(f"Test  : {X_test_v1.shape[0]} rows")
+
+# ── Define spline vs linear columns ──────────────────────────────────────────
+SPLINE_COLS = ["ln_GLA", "EffYearBuilt_Weighted", "Quality_Weighted",
+               "AsinH_Acreage", "AsinH_Land_Value", "AsinH_Total_Value"]
+spline_cols = [c for c in SPLINE_COLS if c in X_train_v1.columns]
+linear_cols = [c for c in X_train_v1.columns if c not in spline_cols]
+
+print(f"\nStage 1 (ElasticNet) : {len(linear_cols)} predictors")
+print(f"Stage 2 (GAM splines): {len(spline_cols)} — {spline_cols}")
+
+X_train_linear_v1 = X_train_v1[linear_cols].values
+X_test_linear_v1  = X_test_v1[linear_cols].values
+X_train_spline_v1 = X_train_v1[spline_cols].values
+X_test_spline_v1  = X_test_v1[spline_cols].values
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 1 — ElasticNet
+# ══════════════════════════════════════════════════════════════════════════════
+scaler_v1             = StandardScaler()
+X_train_lin_v1_scaled = scaler_v1.fit_transform(X_train_linear_v1)
+X_test_lin_v1_scaled  = scaler_v1.transform(X_test_linear_v1)
+
+enet_v1 = ElasticNetCV(
+    l1_ratio     = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1.0],
+    alphas       = np.logspace(-4, 1, 50),
+    cv           = 5,
+    max_iter     = 50000,
+    tol          = 1e-3,
+    n_jobs       = -1,
+    random_state = 2026
+)
+enet_v1.fit(X_train_lin_v1_scaled, y_train_v1)
+
+y_stage1_v1_train = enet_v1.predict(X_train_lin_v1_scaled)
+y_stage1_v1_test  = enet_v1.predict(X_test_lin_v1_scaled)
+resid_stage1_v1   = y_train_v1.values - y_stage1_v1_train
+
+nonzero_v1 = (enet_v1.coef_ != 0).sum()
+print(f"\nStage 1 complete:")
+print(f"  Alpha    : {enet_v1.alpha_:.6f}")
+print(f"  L1 ratio : {enet_v1.l1_ratio_:.2f}")
+print(f"  Non-zero : {nonzero_v1} / {len(enet_v1.coef_)}  ({len(enet_v1.coef_) - nonzero_v1} zeroed out)")
+print(f"  Train R² : {r2_score(y_train_v1, y_stage1_v1_train):.4f}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 2 — GAM splines on Stage 1 residuals
+# ══════════════════════════════════════════════════════════════════════════════
+spline_idx = list(range(len(spline_cols)))
+gam_terms  = reduce(operator.add, [s(i, n_splines=20) for i in spline_idx])
+
+gam_v1 = LinearGAM(gam_terms)
+gam_v1.gridsearch(
+    X_train_spline_v1, resid_stage1_v1,
+    lam=np.logspace(0, 8, 60),  # ← floor raised to 1, ceiling to 1e8, more points
+    progress=False
+)
+
+best_lam_v1 = np.unique([round(float(l[0]), 4) for l in gam_v1.lam])
+print(f"\nStage 2 complete:")
+print(f"  Best lambda : {best_lam_v1}")
+print(f"  GCV Score   : {gam_v1.statistics_['GCV']:.6f}")
+
+# ── Combined predictions ──────────────────────────────────────────────────────
+y_spline_v1_train = gam_v1.predict(X_train_spline_v1)
+y_spline_v1_test  = gam_v1.predict(X_test_spline_v1)
+
+y_pred_v1_train = y_stage1_v1_train + y_spline_v1_train
+y_pred_v1_test  = y_stage1_v1_test  + y_spline_v1_test
+resid_v1        = y_train_v1.values - y_pred_v1_train
+
+ss_res      = ((y_test_v1.values - y_pred_v1_test) ** 2).sum()
+ss_tot      = ((y_test_v1.values - y_test_v1.values.mean()) ** 2).sum()
+r2_test_v1  = 1 - ss_res / ss_tot
+r2_train_v1 = r2_score(y_train_v1, y_pred_v1_train)
+
+print("\n" + "=" * 50)
+print("  GAM v1 — Two-Stage Hybrid")
+print("=" * 50)
+print(f"  Stage 1 Train R² (ElasticNet) : {r2_score(y_train_v1, y_stage1_v1_train):.4f}")
+print(f"  Stage 2 correction added      : {r2_score(resid_stage1_v1, y_spline_v1_train):.4f} R² of residuals explained")
+print(f"  Combined Train R²             : {r2_train_v1:.4f}")
+print(f"  Combined Test  R²             : {r2_test_v1:.4f}")
+print(f"  Train-Test gap                : {r2_train_v1 - r2_test_v1:.4f}")
+print("=" * 50)
+
+# ── Assumption tests ──────────────────────────────────────────────────────────
+dw = sm.stats.stattools.durbin_watson(resid_v1)
+bp_stat, bp_p, _, _ = het_breuschpagan(resid_v1, sm.add_constant(X_train_lin_v1_scaled))
+
+print(f"\n  Residual skew         : {pd.Series(resid_v1).skew():.3f}")
+print(f"  Residual kurt         : {pd.Series(resid_v1).kurt():.3f}")
+print(f"  Residual std          : {resid_v1.std():.4f}")
+print(f"  Durbin-Watson         : {dw:.4f}  (2.0 = no autocorrelation)")
+print(f"  Breusch-Pagan p-value : {bp_p:.4f} ({'Heteroscedastic' if bp_p < 0.05 else 'Homoscedastic'})")
+
+# ── Partial dependence plots ──────────────────────────────────────────────────
+fig, axes = plt.subplots(1, len(spline_cols), figsize=(5 * len(spline_cols), 4))
+for i, col in enumerate(spline_cols):
+    XX = gam_v1.generate_X_grid(term=i)
+    axes[i].plot(XX[:, i], gam_v1.partial_dependence(term=i, X=XX))
+    axes[i].plot(XX[:, i], gam_v1.partial_dependence(term=i, X=XX, width=0.95)[1],
+                 c="r", ls="--", alpha=0.5)
+    axes[i].set_title(f"Spline: {col}")
+    axes[i].set_xlabel(col)
+    axes[i].set_ylabel("Nonlinear Correction")
+plt.suptitle("GAM v1 — Partial Dependence of Spline Corrections", fontsize=13)
+plt.tight_layout()
+plt.show()
+
+# ── Diagnostic plots ──────────────────────────────────────────────────────────
+fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+
+axes[0,0].scatter(y_pred_v1_train, resid_v1, alpha=0.2, s=8, color="#2980b9")
+axes[0,0].axhline(0, color="red", linestyle="--")
+axes[0,0].set_title("Residuals vs Fitted")
+axes[0,0].set_xlabel("Fitted Values")
+axes[0,0].set_ylabel("Residuals")
+
+(osm, osr), (slope, intercept, r) = scipy_stats.probplot(resid_v1, dist="norm")
+axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+axes[0,1].set_title("Normal Q-Q Plot")
+axes[0,1].set_xlabel("Theoretical Quantiles")
+axes[0,1].set_ylabel("Sample Quantiles")
+
+sqrt_abs_resid_v1 = np.sqrt(np.abs(resid_v1))
+axes[0,2].scatter(y_pred_v1_train, sqrt_abs_resid_v1, alpha=0.2, s=8, color="#27ae60")
+axes[0,2].set_title("Scale-Location (Homoscedasticity)")
+axes[0,2].set_xlabel("Fitted Values")
+axes[0,2].set_ylabel("√|Residuals|")
+
+seg_col_v1 = [c for c in X_train_v1.columns if c.startswith("segment_")]
+if seg_col_v1:
+    seg_labels_v1 = pd.Series("Other", index=train_v1.index)
+    seg_labels_v1[X_train_v1[seg_col_v1[0]] == 1] = "Residential"
+else:
+    seg_labels_v1 = pd.Series("All", index=train_v1.index)
+
+colors = {"Residential": "#2980b9", "Other": "#f39c12", "All": "#2980b9"}
+for seg, col in colors.items():
+    mask = seg_labels_v1 == seg
+    if mask.any():
+        axes[1,0].scatter(y_pred_v1_train[mask], resid_v1[mask],
+                          alpha=0.2, s=8, color=col, label=seg)
+axes[1,0].axhline(0, color="red", linestyle="--")
+axes[1,0].set_title("Residuals vs Fitted by Segment")
+axes[1,0].set_xlabel("Fitted Values")
+axes[1,0].set_ylabel("Residuals")
+axes[1,0].legend()
+
+axes[1,1].hist(resid_v1, bins=60, color="#9b59b6", edgecolor="white")
+axes[1,1].axvline(0, color="red", linestyle="--")
+axes[1,1].set_title("Residual Distribution")
+axes[1,1].set_xlabel("Residuals")
+axes[1,1].set_ylabel("Count")
+
+axes[1,2].scatter(y_test_v1, y_pred_v1_test, alpha=0.2, s=8, color="#e67e22")
+axes[1,2].plot([y_test_v1.min(), y_test_v1.max()],
+               [y_test_v1.min(), y_test_v1.max()], color="red", linestyle="--")
+axes[1,2].set_title("Actual vs Predicted (Test Set)")
+axes[1,2].set_xlabel("Actual ln(Trended_Price)")
+axes[1,2].set_ylabel("Predicted ln(Trended_Price)")
+
+plt.suptitle("GAM v1 — Two-Stage Hybrid Full Diagnostics", fontsize=14)
+plt.tight_layout()
+plt.show()
+
+```
