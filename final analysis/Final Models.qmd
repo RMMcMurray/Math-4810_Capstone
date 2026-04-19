@@ -28,10 +28,10 @@ diagnostics that are found in the working model qmd's.
 
 -   **Linear model** (`predict_price_linear`): Lasso-selected OLS on the
     polynomial + segment-interaction feature matrix from *Model Building 3*.
-    Test R² ≈ 0.88, dollar MAE ≈ \$35k. Full coefficient table shown;
+    Test R² ≈ 0.88, dollar MAE ≈ \$40k. Full coefficient table shown;
     every feature is interpretable with a p-value.
 -   **Non-linear model** (`predict_price_nonlinear`): LightGBM tuned and
-    validated in *Model Building 5*. Test R² ≈ 0.95, dollar MAE ≈ \$18k.
+    validated in *Model Building 5*. Test R² ≈ 0.95, dollar MAE ≈ \$20k.
     Includes a SHAP beeswarm for global importance and two waterfall
     plots showing *how the model priced a specific property*.
 
