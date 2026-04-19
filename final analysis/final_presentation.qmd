@@ -1,5 +1,5 @@
 ---
-title: "Final Presentation"
+title: "Final Capstone Presentation"
 author: "Ryan McMurray, Melanie Jensen, Lucca"
 format:
   revealjs:
@@ -18,16 +18,24 @@ jupyter: python3
 
 # Introduction {background-color="#00ffffff"}
 
-## Formal Introduction
-
 ## The Problem
 
-- Property values are only captured at the **point of sale**
+County assessors face a fundamental data problem: property values are only observed at sale, but must be estimated continuously for taxation.
+
+- Property values are only captured at the point of sale
 - Between sales, assessors must estimate value manually — no data-driven basis
-- Estimates are inconsistently applied and **difficult to defend in court**
+- Estimates are inconsistently applied and difficult to defend in court
 - The result: property tax assessments that are arbitrary and legally vulnerable
 
-# Data Integration {background-color="#64063dff"}
+## Data Science Life Cycle
+- Data acquisition and representativeness
+- Data management
+- Data preparation and integration
+- Data analysis
+- Model development and deployment
+- Visualization and communication of the knowledge obtained from the data
+
+# Data Acquisition, Management, and Integration {background-color="#64063dff"}
 
 ## Data Consolidation & Segmenting
 
@@ -63,6 +71,8 @@ import seaborn as sns
 import matplotlib.dates as mdates
 
 # Pointing to the time-adjusted output from your python script
+
+# CHANGE THIS MELANIE
 df_combined = pd.read_csv("C:/Users/mcmur/OneDrive/Documents/GitHub/Math-4810_Capstone/data/final_adjusted.csv")
 
 # Ensure Sold Date is datetime for plotting
@@ -75,7 +85,7 @@ print(f"Total Adjusted Sales Loaded: {len(df_combined)}")
 print(f"Segments available: {df_combined['segment'].unique()}")
 ```
 
-## Price Adustment Visual
+## Price Adjustment Visual
 
 ```{python}
 # | label: trend_visualization_refined
@@ -142,10 +152,13 @@ plt.tight_layout()
 plt.show()
 ```
 
-# Exploratory Data Analysis {background-color="#c26700ff"}
+# Data Analysis {background-color="#c26700ff"}
+
+## Slide
 
 ```{python}
 #| label: analytics_functions
+#| cache: true
 import umap
 import hdbscan
 import numpy as np
@@ -265,21 +278,21 @@ plt.show()
 ::: {.column width="60%"}
 
 ```{python}
-# | label: loading-matrix
+#| label: loading-matrix
+#| cache: true
 
-# 1. Identify which columns were actually kept after scaling
-# We mimic the logic in get_scaled_data to find the column names
+# Identify which columns were actually kept after scaling
 numeric_df = res_features.select_dtypes(include=[np.number]).fillna(0)
 kept_cols = numeric_df.columns[numeric_df.var() > 1e-4]
 
-# 2. Create the loadings DataFrame using the correct index
+# Create the loadings DataFrame using the correct index
 loadings = pd.DataFrame(
     pca_full.components_.T,
     columns=[f"PC{i + 1}" for i in range(pca_full.n_components_)],
     index=kept_cols,  # Use the filtered columns here
 )
 
-# 3. Visualization
+# Visualization
 plt.figure(figsize=(12, 10))
 # Showing top 15 features for readability
 sns.heatmap(
@@ -318,13 +331,309 @@ plot_umap_branded(res_emb_l, res_target, "Price Gradient", is_price=True)
 
 # Linear Model {background-color="#460664ff"}
 
-## Benfits of a Linear Model
+```{python}
+#| label: model_setup
 
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
 
-# Random Forest {background-color="#064d00ff"}
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LassoCV
+from sklearn.metrics import r2_score, mean_absolute_error
 
-## Our Choice: Random Forest
+RS = 2026
+plt.rcParams["figure.dpi"] = 110
 
-> **Why?** While Gradient Boosting offers slightly higher precision, Random Forest provides superior stability. It is less prone to "overfitting" (hallucinating patterns in the noise), ensuring our valuations are both accurate and statistically defensible.
+# -------------------------
+# BASE FRAME
+# -------------------------
+df_shared = df_combined.copy()
+
+df_shared = df_shared.dropna(subset=["Trended_Price"])
+df_shared["Trended_Price"] = df_shared["Trended_Price"].astype(float)
+
+df_shared = df_shared.fillna(0)
+
+# log target
+df_shared["ln_Trended_Price"] = np.log(df_shared["Trended_Price"])
+
+# drop leakage columns safely
+DROP = ["Sold Price", "Sold Date", "Adj_Price"]
+df_shared = df_shared.drop(columns=[c for c in DROP if c in df_shared.columns])
+
+# one-hot encode
+df_model_enc = pd.get_dummies(df_shared, drop_first=True)
+
+print(df_model_enc.shape)
+```
+
+## Train\test
+
+```{python}
+#| label: split_data
+
+y = df_model_enc["ln_Trended_Price"]
+X = df_model_enc.drop(columns=["ln_Trended_Price"])
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=RS
+)
+```
+
+## Linear Modeling
+
+```{python}
+#| label: linear_model_elastic_net
+
+from sklearn.linear_model import ElasticNetCV
+
+# ELASTIC NET + OLS PIPELINE
+
+# Ensure numeric only
+X_train_num = X_train.select_dtypes(include=[np.number]).copy()
+X_test_num = X_test.select_dtypes(include=[np.number]).copy()
+
+# Align columns
+X_train_num, X_test_num = X_train_num.align(
+    X_test_num, join="left", axis=1, fill_value=0
+)
+
+# Scale features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train_num)
+
+# Elastic Net (better than Lasso for correlated data)
+enet = ElasticNetCV(
+    l1_ratio=[0.1, 0.3, 0.5, 0.7, 0.9],  # mix of ridge + lasso
+    cv=5,
+    random_state=RS,
+    n_jobs=-1,
+)
+
+enet.fit(X_train_scaled, y_train)
+
+# Selected features
+selected = X_train_num.columns[enet.coef_ != 0]
+
+# Fallback if nothing selected
+if len(selected) == 0:
+    selected = X_train_num.columns[:10]
+
+print(f"\nSelected {len(selected)} features via Elastic Net")
+
+# OLS RE-FIT
+
+X_train_sel = sm.add_constant(X_train_num[selected]).astype(float)
+X_test_sel = sm.add_constant(X_test_num[selected]).astype(float)
+
+y_train_float = y_train.astype(float)
+y_test_float = y_test.astype(float)
+
+ols = sm.OLS(y_train_float.values, X_train_sel.values).fit()
+
+y_pred_lin = ols.predict(X_test_sel.values)
+
+# Back-transform
+y_test_real = np.exp(y_test_float)
+y_pred_lin_real = np.exp(y_pred_lin)
+
+# Metrics
+r2_lin = r2_score(y_test_float, y_pred_lin)
+mae_lin = mean_absolute_error(y_test_real, y_pred_lin_real)
+
+print("\nELASTIC NET + OLS MODEL")
+print("R2:", round(r2_lin, 3))
+print("MAE:", f"${mae_lin:,.0f}")
+
+# VARIABLE TABLE (KEY OUTPUT)
+
+coef_table = pd.DataFrame(
+    {"Variable": ["Intercept"] + list(selected), "Coefficient": ols.params}
+)
+
+coef_table = coef_table.sort_values(
+    by="Coefficient", key=lambda x: abs(x), ascending=False
+)
+
+print("Best alpha:", enet.alpha_)
+print("Best l1_ratio:", enet.l1_ratio_)
+print("\nTop Variables:")
+display(coef_table.head(20))
+```
+
+## Plot
+```{python}
+#| label: linear_plot
+
+plt.figure(figsize=(7, 5))
+plt.scatter(y_test_real, y_pred_lin_real, alpha=0.3)
+plt.plot([y_test_real.min(), y_test_real.max()], [y_test_real.min(), y_test_real.max()])
+plt.title("Linear Model: Actual vs Predicted")
+plt.xlabel("Actual")
+plt.ylabel("Predicted")
+plt.show()
+```
+
+## Residuals
+
+```{python}
+#| label: linear_residuals
+
+res_lin = y_test_real - y_pred_lin_real
+
+plt.figure(figsize=(7, 5))
+plt.scatter(y_pred_lin_real, res_lin, alpha=0.3)
+plt.axhline(0)
+plt.title("Linear Model Residuals")
+plt.xlabel("Predicted")
+plt.ylabel("Residual")
+plt.show()
+```
+
+# Light GBM {background-color="#064d00ff"}
+
+## Model
+
+```{python}
+#| label: lgbm_model
+
+y_pred_lgb = None
+r2_lgb = None
+mae_lgb = None
+
+try:
+    import lightgbm as lgb
+    from sklearn.metrics import r2_score, mean_absolute_error
+
+    X_train_num = X_train.select_dtypes(include=[np.number]).copy()
+    X_test_num = X_test.select_dtypes(include=[np.number]).copy()
+
+    # Align columns (critical for consistency)
+    X_train_num, X_test_num = X_train_num.align(
+        X_test_num, join="left", axis=1, fill_value=0
+    )
+
+    # Force clean numeric dtype (prevents object crash)
+    X_train_num = X_train_num.astype(float)
+    X_test_num = X_test_num.astype(float)
+
+    # LIGHTGBM MODEL
+    # =========================
+    lgb_model = lgb.LGBMRegressor(
+        n_estimators=500, learning_rate=0.05, num_leaves=31, random_state=RS
+    )
+
+    lgb_model.fit(X_train_num, y_train)
+
+    y_pred_lgb = lgb_model.predict(X_test_num)
+
+    # Back-transform (log scale → dollars)
+    y_pred_lgb_real = np.exp(y_pred_lgb)
+    y_test_real = np.exp(y_test)
+
+    # Metrics (log space + real space consistency)
+    r2_lgb = r2_score(y_test, y_pred_lgb)
+    mae_lgb = mean_absolute_error(y_test_real, y_pred_lgb_real)
+
+    print("LIGHTGBM MODEL")
+    print("R2:", round(r2_lgb, 3))
+    print("MAE:", f"${mae_lgb:,.0f}")
+
+except ModuleNotFoundError:
+    print("LightGBM not installed → pip install lightgbm")
+```
+
+## Plot
+
+```{python}
+#| label: lgbm_plot
+
+if y_pred_lgb is not None:
+    plt.figure(figsize=(7, 5))
+    plt.scatter(y_test_real, y_pred_lgb_real, alpha=0.3)
+    plt.plot(
+        [y_test_real.min(), y_test_real.max()], [y_test_real.min(), y_test_real.max()]
+    )
+    plt.title("LightGBM: Actual vs Predicted")
+    plt.xlabel("Actual")
+    plt.ylabel("Predicted")
+    plt.show()
+```
+
+## Residuals
+
+```{python}
+#| label: lgbm_residuals
+
+if y_pred_lgb is not None:
+    res_lgb = y_test_real - y_pred_lgb_real
+
+    plt.figure(figsize=(7, 5))
+    plt.scatter(y_pred_lgb_real, res_lgb, alpha=0.3)
+    plt.axhline(0)
+    plt.title("LightGBM Residuals")
+    plt.xlabel("Predicted")
+    plt.ylabel("Residual")
+    plt.show()
+```
+
+## Waterfall Plot
+
+```{python}
+#| label: lgbm_waterfall
+#| cache: true
+
+import shap
+
+# Ensure model exists
+if y_pred_lgb is not None:
+    # Safer SHAP for LightGBM
+    explainer = shap.TreeExplainer(lgb_model)
+
+    # single observation
+    X_sample = X_test.sample(1, random_state=RS)
+
+    shap_values = explainer.shap_values(X_sample)
+
+    shap.plots.waterfall(
+        shap.Explanation(
+            values=shap_values[0],
+            base_values=explainer.expected_value,
+            data=X_sample.iloc[0],
+            feature_names=X_sample.columns
+        )
+    )
+
+else:
+    print("LightGBM model not available.")
+```
+
+## Comparison
+
+```{python}
+#| label: model_compare
+
+print("\nMODEL COMPARISON")
+print("------------------")
+print(f"Linear   R²: {r2_lin:.3f}   MAE: ${mae_lin:,.0f}")
+
+if r2_lgb is not None:
+    print(f"LightGBM R²: {r2_lgb:.3f}   MAE: ${mae_lgb:,.0f}")
+```
+
 
 # Concluding Thoughts {background-color="#4d0000ff"}
+
+## Next Steps
+
+## New Tools we Learned to Use
+
+- hdbscan
+- lightgbm
+- random forest
+- SHAP library
+
+## Security
