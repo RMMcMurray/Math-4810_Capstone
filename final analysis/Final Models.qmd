@@ -22,16 +22,16 @@ engine: python
 
 # Overview
 
-This notebook is the hand-off deliverable for the UI team. It contains
+This notebook is the hand-off deliverable for the UI integration. It contains
 **only the two chosen models** — no search grids, no ablations, no
-diagnostics beyond what you need to trust the numbers.
+diagnostics that are found in the working model qmd's.
 
 -   **Linear model** (`predict_price_linear`): Lasso-selected OLS on the
     polynomial + segment-interaction feature matrix from *Model Building 3*.
-    Test R² ≈ 0.88, dollar MAE ≈ \$35k. Full coefficient table shown;
+    Test R² ≈ 0.88, dollar MAE ≈ \$40k. Full coefficient table shown;
     every feature is interpretable with a p-value.
 -   **Non-linear model** (`predict_price_nonlinear`): LightGBM tuned and
-    validated in *Model Building 5*. Test R² ≈ 0.95, dollar MAE ≈ \$18k.
+    validated in *Model Building 5*. Test R² ≈ 0.95, dollar MAE ≈ \$20k.
     Includes a SHAP beeswarm for global importance and two waterfall
     plots showing *how the model priced a specific property*.
 
@@ -39,13 +39,6 @@ Both functions accept raw feature names (e.g. `GLA=2400`,
 `Acreage=0.25`, `segment='Residential'`). Missing features fall back to
 the **segment median** from the training data, so you can call either
 function with as few or as many features as you have on hand.
-
-> **How to wire this into a UI.** At startup, render this file once
-> (or run it as a script) to get `linear_model`, `nl_model`, and the two
-> helper functions. Inside the app, forward user inputs straight to the
-> helpers — they return the dollar estimate plus a 95 % interval and,
-> for the non-linear case, the five biggest SHAP contributions so the UI
-> can *explain* each quote.
 
 ---
 
@@ -70,9 +63,12 @@ import shap
 
 RS = 2026  # random-state seed used throughout
 plt.rcParams['figure.dpi'] = 110
-CSV_PATH = ("/Users/melaniejensen/Library/CloudStorage/"
-            "OneDrive-SouthernUtahUniversity/Math-4810_Capstone/material/"
-            "final_adjusted.csv")
+
+url = "https://raw.githubusercontent.com/RMMcMurray/Math-4810_Capstone/main/data/final_adjusted.csv"
+raw = pd.read_csv(url)
+
+print(raw.shape)
+print(raw.head())
 ```
 
 # Shared Data Cleaning
@@ -90,16 +86,7 @@ def _is_stringlike(s):
     """True for object-dtype OR pandas 2.x pyarrow-string columns."""
     return s.dtype == object or str(s.dtype).lower().startswith('string')
 
-raw = pd.read_csv(CSV_PATH)
-
 df_shared = raw.copy()
-
-# Amenity NAs mean "no amenity", not "missing"
-for c in ['Tot Bsmt','SqFt_DetGarage','SqFt_DetCarport','Sqft_Barn',
-          'SqFt_Guest_House','SqFt_Pools','SqFt_Recreational_Courts',
-          'SqFt_Shed','SqFt_Gazebo_Pavilion']:
-    if c in df_shared.columns and df_shared[c].isna().any():
-        df_shared[c] = df_shared[c].fillna(0)
 
 # Coerce dollar-formatted columns ("$97,549.00", "-", blanks) into floats.
 # Runs unconditionally — astype(str) is a no-op for already-numeric data,
@@ -111,18 +98,12 @@ for c in ['Land Value','Total Value']:
         df_shared[c] = pd.to_numeric(s, errors='coerce').astype('float64')
 
 # Drop post-sale / leakage / redundant-count columns we never want in either model
-DROP_COMMON = ['Sold Price','Sold Date','Concessions Amount','Age','Adj_Price',
+DROP_COMMON = ['Sold Price','Sold Date','Concessions Amount','Age', 'Adj_Price',
                'ln_Price','Time_1','Time_2','Time_3',
                'Count_DetGarage','Count_ DetCarport','Count_Barn',
                'Count_Guest_House','Count_Pools','Count_Recreational_Courts',
                'Count_Shed','Count_Gazebo_Pavilion']
 df_shared = df_shared.drop(columns=[c for c in DROP_COMMON if c in df_shared.columns])
-
-# Drop rows missing core structural / assessor fields
-df_shared = df_shared.dropna(subset=['EffYearBuilt_Weighted','Quality_Weighted'])
-for c in ['Land Value','Total Value','BsmtFinishPct_Weighted']:
-    if c in df_shared.columns and df_shared[c].isna().any():
-        df_shared = df_shared.dropna(subset=[c])
 
 df_shared = df_shared.reset_index(drop=True)
 
@@ -794,13 +775,7 @@ for name, shap_val, feat_val in r['top_contribs']:
 | Linear (Lasso→OLS, MB 3) | ~0.88 | ~\$35k  | `pred, pi_lo, pi_hi, log_pred, segment_used`   |
 | LightGBM (MB 5)          | ~0.95 | ~\$18k  | `+ top_contribs` for "why?" explanations       |
 
-**Recommended UI pattern.** Use `predict_price_nonlinear` for the
-headline quote and the explanation breakdown; keep
-`predict_price_linear` available as a sanity-check / second opinion
-whose full coefficient table can be shown to an appraiser who wants to
-audit the math.
-
-**Things a UI dev should know.**
+**UI Notes**
 
 1.  Both helpers return **dollars** — exponentiation from log-price is
     done inside.
