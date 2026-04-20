@@ -1293,6 +1293,13 @@ print(comparison_display.to_string())
 ### Model Interpretability
 - **SHAP** — explaining model predictions at the feature level  
 
+## Do-Over {background-color="4682B4"}
+- **Too much time on**: 
+  - EDA
+- **More time on**: 
+  - Modeling 
+  - UI Creation and Integration
+
 # Web Tool {background-color="#000000"}
 
 # Questions
