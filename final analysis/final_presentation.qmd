@@ -1,6 +1,6 @@
 ---
 title: "Final Capstone Presentation"
-author: "Ryan McMurray, Melanie Jensen, Lucca"
+author: "Ryan McMurray, Melanie Jensen, Viniccius Florindo Coelho"
 format:
   revealjs:
     code-fold: true
@@ -20,47 +20,125 @@ jupyter: python3
 
 ## The Problem
 
-County assessors face a fundamental data problem: property values are only observed at sale, but must be estimated continuously for taxation.
+County assessors face a fundamental data problem: property values are only observed at sale, but must be estimated continuously for taxation. 
 
-- Property values are only captured at the point of sale
-- Between sales, assessors must estimate value manually — no data-driven basis
-- Estimates are inconsistently applied and difficult to defend in court
+- Property values are only captured at the point of sale 
+- Between sales, assessors must estimate value manually 
+— no data-driven basis 
+- Estimates are inconsistently applied and difficult to defend in court 
 - The result: property tax assessments that are arbitrary and legally vulnerable
 
-## Data Science Life Cycle
-- Data acquisition and representativeness
-- Data management
-- Data preparation and integration
-- Data analysis
-- Model development and deployment
-- Visualization and communication of the knowledge obtained from the data
+## Our Goal
+
+Build a data-driven model that estimates current property values by combining: 
+
+- Historical sales
+- Physical property features  
+- Time-based price adjustments
+
+Produce valuations that are consistent, explainable, and defensible, rather than manually estimated or opinion-based.
+
+## Local Impact
+
+### County Assessors
+- Data-driven valuation instead of manual estimation  
+- Consistent, defensible assessments  
+
+### Homeowners / Taxpayers
+- Fairer property tax assessments  
+- Reduced risk of over- or under-taxation  
+
+### Local Government
+- More stable tax revenue  
+- Improved transparency and planning  
+
+## Broader Impact
+
+### Scalability
+- Model can be applied to other counties or states  
+- Reduces reliance on outdated appraisal methods  
+
+### Public Trust
+- Transparent, reproducible valuation process  
+- Easier to defend decisions legally  
+
+### Data-Driven Governance
+- Supports modernization of public-sector systems  
+- Moves policy decisions toward statistical evidence  
+
+## Legal & Ethical Considerations
+
+### Legal
+- Assessments must be defensible in appeals and court
+- Requires transparent and explainable models
+- Must comply with county/state valuation standards  
+
+### Ethical
+- Risk of bias from historical sales data
+- Ensuring fair treatment across neighborhoods and price tiers
+- Avoiding systematic over/under valuation  
+
+## Security & Social Impact
+
+### Data Security
+- Protect property and ownership data
+- Prevent manipulation of valuation inputs/outputs
+- Ensure auditable data pipelines
+
+### Social Impact
+- Directly affects household tax burden
+- Influences public trust in local government
+- Impacts perceptions of fairness in taxation
+
+## Tools
+
+:::: {.columns}
+
+::: {.column width="25%"}
+#### Python
+- Data processing  
+- Modeling  
+- Structure discovery  
+- Explainability  
+:::
+
+::: {.column width="25%"}
+#### Excel
+- Data validation  
+- Cross-checking  
+:::
+
+::: {.column width="25%"}
+#### Quarto
+- Reproducible workflow  
+- Presentations  
+:::
+
+::: {.column width="25%"}
+#### GitHub
+- Version control  
+- Collaboration  
+:::
+
+::::
 
 # Data Acquisition, Management, and Integration {background-color="#64063dff"}
 
 ## Data Consolidation & Segmenting
 
-* **Multi-Source Integration**: Stacked separate Residential, Multi-Family, and Land Sales exports into a unified master frame.
-* **Variable Subsetting**: Filtered for high-value modeling features including Parcel ID, Net Price, Date, and physical metrics (GLA, Beds, Baths).
-* **Segment Isolation**: Tagged each record by asset class to allow for segment-specific regression analysis.
+- Combined Residential, Multi-Family, and Land sales into one dataset  
+- Selected key modeling features (price, size, beds, baths, parcel info)  
+- Tagged records by property type for segmented analysis  
+- Merged external spatial data
 
 ## Technical Harmonization
 
-* **Identifier Standardization**: Cleaned Parcel and List numbers by stripping non-numeric characters and leading zeros to ensure reliable joining.
-* **Math-Ready Validation**: Enforced positive values for prices to prevent errors during Log transformations.
-* **Concession Sanitization**: Neutralized missing or null concession data to protect net price calculations.
-* **Feature Engineering**: Generated net adjusted sales prices by subtracting seller concessions from gross totals.
+- Standardized identifiers (Parcel ID, List number)  
+- Cleaned and validated pricing data for modeling  
+- Created net adjusted sale price after concessions  
+- Imputed missing geographic and physical attributes   
 
-## Spatial & Attribute Integration
-
-* **PUMA Data Enrichment**: Merged external spatial attributes using a fallback imputation strategy to maximize data density.
-* **Neighborhood Mapping**: Linked properties to specific local Neighborhood Codes (NbhdCode) to capture geographic value drivers.
-* **Data Continuity**: Integrated disparate physical features from secondary sources to backfill missing primary record attributes.
-
-## Quality Control & Temporal Integrity
-
-* **Temporal Filtering**: Strictly removed records with missing sales dates to ensure the validity of time-trend piecewise regressions.
-* **Bracket Classification**: Created price-tier bins to allow for stratified analysis of market behavior across value levels.
-* **Observation Scrubbing**: Dropped records missing core physical descriptors that serve as primary model predictors.
+### Final DataFrame
 
 ```{python}
 #| label: load_data
@@ -72,7 +150,6 @@ import matplotlib.dates as mdates
 
 # Pointing to the time-adjusted output from your python script
 
-# CHANGE THIS MELANIE
 df_combined = pd.read_csv("https://raw.githubusercontent.com/RMMcMurray/Math-4810_Capstone/main/data/final_adjusted.csv")
 
 # Ensure Sold Date is datetime for plotting
@@ -84,6 +161,28 @@ lien_date = pd.Timestamp("2026-01-01")
 print(f"Total Adjusted Sales Loaded: {len(df_combined)}")
 print(f"Segments available: {df_combined['segment'].unique()}")
 ```
+
+## Market Time Adjustment
+
+Property sales occur at different points in the market cycle, so raw prices are not directly comparable across time. We estimate how the market changed over time and remove that effect:
+
+- Identify how prices evolve across time
+- Capture market cycles and structural shifts
+- Convert all sales into “current-equivalent” values
+
+## Time Adjustment Model
+
+### Detect Market Structure
+- Piecewise linear regression on log(price) over time
+- Identifies 3 market phases (structural breakpoints)
+
+### Model Time Effects
+- Create time-bucket variables between breakpoints
+- Estimate time coefficients using segment-specific OLS
+
+### Apply Adjustment
+- Convert time effects into price multipliers
+- Adjust each sale forward to 2026 values:
 
 ## Price Adjustment Visual
 
@@ -153,8 +252,6 @@ plt.show()
 ```
 
 # Data Analysis {background-color="#c26700ff"}
-
-## Slide
 
 ```{python}
 #| label: analytics_functions
@@ -248,29 +345,52 @@ res_target = res_df["Trended_Price"]
 ::: {.column width="40%"}
 
 ```{python}
-# | label: scree-plot
+#| label: scree-plot
+
 exp_var = pca_full.explained_variance_ratio_
 cum_var = exp_var.cumsum()
 
-plt.figure(figsize=(8, 8))
+# number of components for 90% variance
+n_90 = np.argmax(cum_var >= 0.9) + 1
+
+# keep original structure but reduce clutter
+max_components = min(len(exp_var), 20)
+
+plt.figure(figsize=(8, 8))  # tighter than original 10x10
+
+# Individual variance (bars)
 plt.bar(
-    range(1, len(exp_var) + 1), exp_var, alpha=0.4, color="gray", label="Individual"
+    range(1, max_components + 1),
+    exp_var[:max_components],
+    alpha=0.5,
+    color="gray",
+    label="Individual Variance",
 )
+
+# Cumulative variance (step - original style preserved)
 plt.step(
-    range(1, len(cum_var) + 1),
-    cum_var,
+    range(1, max_components + 1),
+    cum_var[:max_components],
     where="mid",
     color="#e74c3c",
     lw=3,
-    label="Cumulative",
+    label="Cumulative Variance",
 )
-plt.axhline(y=0.9, color="#3498db", linestyle="--", alpha=0.7)
 
-plt.title("Scree Plot: Explained Variance", fontsize=18)
+# 90% threshold
+plt.axhline(y=0.9, color="#3498db", linestyle="--", alpha=0.8)
+
+# marker for 90% cutoff
+plt.axvline(x=n_90, color="#2ecc71", linestyle="--", alpha=0.8)
+plt.text(n_90 + 0.5, 0.5, f"{n_90} PCs ≈ 90% variance", rotation=90, color="#2ecc71")
+
+plt.title("PCA Scree Plot: Explained Variance Structure", fontsize=16)
 plt.xlabel("Principal Components")
 plt.ylabel("Variance Ratio")
-plt.legend(loc="center right")
+
 plt.grid(axis="y", alpha=0.3)
+
+plt.tight_layout()
 plt.show()
 ```
 :::
@@ -281,29 +401,34 @@ plt.show()
 #| label: loading-matrix
 #| cache: true
 
-# Identify which columns were actually kept after scaling
+# Keep only meaningful numeric features
 numeric_df = res_features.select_dtypes(include=[np.number]).fillna(0)
-kept_cols = numeric_df.columns[numeric_df.var() > 1e-4]
+filtered_df = numeric_df.loc[:, numeric_df.var() > 1e-4]
 
-# Create the loadings DataFrame using the correct index
+# PCA
+res_scaled = StandardScaler().fit_transform(filtered_df)
+pca_full = PCA().fit(res_scaled)
+
+# LIMIT PCs for interpretability
+n_pcs = 10
 loadings = pd.DataFrame(
-    pca_full.components_.T,
-    columns=[f"PC{i + 1}" for i in range(pca_full.n_components_)],
-    index=kept_cols,  # Use the filtered columns here
+    pca_full.components_[:n_pcs].T,
+    columns=[f"PC{i + 1}" for i in range(n_pcs)],
+    index=filtered_df.columns,
 )
 
-# Visualization
-plt.figure(figsize=(12, 10))
-# Showing top 15 features for readability
+# Plot
+plt.figure(figsize=(10, 8))
+
 sns.heatmap(
-    loadings.head(15),
+    loadings,
     cmap="RdBu_r",
     center=0,
-    annot=True,
-    fmt=".2f",
+    annot=False,  # <- IMPORTANT: improves readability a lot
     cbar_kws={"label": "Weight"},
 )
-plt.title("Feature Loadings: Physical Drivers", fontsize=18)
+
+plt.title("Top Feature Loadings (Principal Components 1–6)", fontsize=16)
 plt.show()
 ```
 :::
@@ -370,10 +495,7 @@ def _is_stringlike(s):
 
 df_shared = df_combined.copy()
 
-# Coerce dollar-formatted columns ("$97,549.00", "-", blanks) into floats.
-# Runs unconditionally — astype(str) is a no-op for already-numeric data,
-# so this is safe regardless of whether pandas read these as object,
-# pyarrow-string, or numeric to begin with.
+# Coerce dollar-formatted columns
 for c in ['Land Value','Total Value']:
     if c in df_shared.columns:
         s = df_shared[c].astype(str).str.replace(r'[\$,\s]', '', regex=True)
@@ -1018,7 +1140,7 @@ shap.plots._waterfall.waterfall_legacy(
 
 # Grab whatever figure SHAP just made and resize it in place
 fig = plt.gcf()
-fig.set_size_inches(14, 6, forward=True)
+fig.set_size_inches(10, 6, forward=True)
 
 plt.suptitle("Waterfall — median-priced residential", y=1.02)
 plt.tight_layout()
@@ -1065,7 +1187,7 @@ shap.plots._waterfall.waterfall_legacy(
 )
 
 fig = plt.gcf()
-fig.set_size_inches(14, 6, forward=True)
+fig.set_size_inches(10, 6, forward=True)
 
 plt.suptitle("Waterfall — luxury residential", y=1.02)
 plt.tight_layout()
@@ -1117,13 +1239,32 @@ print(comparison_display.to_string())
 
 # Concluding Thoughts {background-color="#4d0000ff"}
 
-## Next Steps
+## Data Science Topics (SUU Curriculum)
 
-## New Tools we Learned to Use
+### Statistical & Mathematical Foundations
+- **Regression Modeling** — linear regression, log transformations  
+- **Model Evaluation** — R², MAE, residual analysis  
+- **PCA (Principal Component Analysis)** — dimensionality reduction  
+- **Bootstrapping Concepts** — understanding variability and robustness  
 
-- hdbscan
-- lightgbm
-- random forest
-- SHAP library
+### Data Science Methods
+- **EDA (Exploratory Data Analysis)** — distributions, outliers, feature relationships  
+- **Feature Engineering** — transformations and variable selection  
+- **Train/Test Splitting** — model validation strategy  
 
-## Security
+## New Topics & Extensions
+
+### Advanced Machine Learning
+- **LightGBM** — gradient boosting for high-performance prediction  
+- **Random Forest** — ensemble-based modeling  
+
+### Unsupervised Learning
+- **HDBSCAN** — density-based clustering  
+- **UMAP** — nonlinear dimensionality reduction  
+
+### Model Interpretability
+- **SHAP** — explaining model predictions at the feature level  
+
+# Web Tool {background-color="#000000"}
+
+# Questions
