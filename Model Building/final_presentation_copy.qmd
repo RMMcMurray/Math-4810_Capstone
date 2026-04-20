@@ -1,0 +1,1129 @@
+---
+title: "Final Capstone Presentation"
+author: "Ryan McMurray, Melanie Jensen, Lucca"
+format:
+  revealjs:
+    code-fold: true
+    theme: simple
+    slide-number: true
+    width: 1600
+    height: 900
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+jupyter: python3
+---
+
+# Introduction {background-color="#00ffffff"}
+
+## The Problem
+
+County assessors face a fundamental data problem: property values are only observed at sale, but must be estimated continuously for taxation.
+
+- Property values are only captured at the point of sale
+- Between sales, assessors must estimate value manually — no data-driven basis
+- Estimates are inconsistently applied and difficult to defend in court
+- The result: property tax assessments that are arbitrary and legally vulnerable
+
+## Data Science Life Cycle
+- Data acquisition and representativeness
+- Data management
+- Data preparation and integration
+- Data analysis
+- Model development and deployment
+- Visualization and communication of the knowledge obtained from the data
+
+# Data Acquisition, Management, and Integration {background-color="#64063dff"}
+
+## Data Consolidation & Segmenting
+
+* **Multi-Source Integration**: Stacked separate Residential, Multi-Family, and Land Sales exports into a unified master frame.
+* **Variable Subsetting**: Filtered for high-value modeling features including Parcel ID, Net Price, Date, and physical metrics (GLA, Beds, Baths).
+* **Segment Isolation**: Tagged each record by asset class to allow for segment-specific regression analysis.
+
+## Technical Harmonization
+
+* **Identifier Standardization**: Cleaned Parcel and List numbers by stripping non-numeric characters and leading zeros to ensure reliable joining.
+* **Math-Ready Validation**: Enforced positive values for prices to prevent errors during Log transformations.
+* **Concession Sanitization**: Neutralized missing or null concession data to protect net price calculations.
+* **Feature Engineering**: Generated net adjusted sales prices by subtracting seller concessions from gross totals.
+
+## Spatial & Attribute Integration
+
+* **PUMA Data Enrichment**: Merged external spatial attributes using a fallback imputation strategy to maximize data density.
+* **Neighborhood Mapping**: Linked properties to specific local Neighborhood Codes (NbhdCode) to capture geographic value drivers.
+* **Data Continuity**: Integrated disparate physical features from secondary sources to backfill missing primary record attributes.
+
+## Quality Control & Temporal Integrity
+
+* **Temporal Filtering**: Strictly removed records with missing sales dates to ensure the validity of time-trend piecewise regressions.
+* **Bracket Classification**: Created price-tier bins to allow for stratified analysis of market behavior across value levels.
+* **Observation Scrubbing**: Dropped records missing core physical descriptors that serve as primary model predictors.
+
+```{python}
+#| label: load_data
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.dates as mdates
+
+# Pointing to the time-adjusted output from your python script
+
+# CHANGE THIS MELANIE
+df_combined = pd.read_csv("https://raw.githubusercontent.com/RMMcMurray/Math-4810_Capstone/main/data/final_adjusted.csv")
+
+# Ensure Sold Date is datetime for plotting
+df_combined["Sold Date"] = pd.to_datetime(df_combined["Sold Date"])
+
+# Define the target lien date for the visual label
+lien_date = pd.Timestamp("2026-01-01")
+
+print(f"Total Adjusted Sales Loaded: {len(df_combined)}")
+print(f"Segments available: {df_combined['segment'].unique()}")
+```
+
+## Price Adjustment Visual
+
+```{python}
+# | label: trend_visualization_refined
+# | code-fold: true
+
+# Use the standardized SqFt column from the clean script
+sqft_col = "TotGLA" if "TotGLA" in df_combined.columns else "Total SqFt"
+
+# Filter for Residential visualization (ensure valid SqFt and positive prices)
+df_plot = df_combined[
+    (df_combined["segment"] == "Residential") & (df_combined[sqft_col] > 100)
+].copy()
+
+# Unit Price Calculation
+# 'Adj_Price' is the original sale minus concessions
+# 'Trended_Price' is that value brought forward to 2026
+df_plot["Price_SqFt_Original"] = df_plot["Adj_Price"] / df_plot[sqft_col]
+df_plot["Price_SqFt_Trended"] = df_plot["Trended_Price"] / df_plot[sqft_col]
+
+# Statistical Cleaning for Plotting (98th percentile to remove outliers)
+y_limit = df_plot["Price_SqFt_Original"].quantile(0.98)
+df_plot = df_plot[df_plot["Price_SqFt_Original"] < y_limit]
+df_plot["date_num"] = mdates.date2num(df_plot["Sold Date"])
+
+plt.figure(figsize=(16, 8))
+
+# Volatile Original Market (Lowess curve for localized trends)
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Original",
+    scatter_kws={"alpha": 0.1, "color": "gray", "s": 12},
+    line_kws={
+        "color": "#e74c3c",
+        "label": "Original Market (Historical)",
+        "linewidth": 3,
+    },
+    lowess=True,
+)
+
+# Stabilized Trended Market
+sns.regplot(
+    data=df_plot,
+    x="date_num",
+    y="Price_SqFt_Trended",
+    scatter=False,
+    line_kws={
+        "color": "#3498db",
+        "label": f"Trended/Stabilized to {lien_date.date()}",
+        "linewidth": 4,
+    },
+    lowess=False,
+)
+
+# Formatting
+ax = plt.gca()
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+plt.ylim(0, y_limit)
+plt.title("Residential Housing Market Stabilization", fontsize=22, pad=20)
+plt.xlabel("Sale Date", fontsize=14)
+plt.ylabel("Price per Square Foot ($)", fontsize=14)
+plt.legend(loc="upper left", fontsize=13)
+plt.tight_layout()
+plt.show()
+```
+
+# Data Analysis {background-color="#c26700ff"}
+
+## Slide
+
+```{python}
+#| label: analytics_functions
+#| cache: true
+import umap
+import hdbscan
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import rankdata
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+# --- UTILITIES ---
+
+def get_scaled_data(df):
+    numeric_df = df.select_dtypes(include=[np.number]).fillna(0)
+    numeric_df = numeric_df.loc[:, numeric_df.var() > 1e-4]
+    return StandardScaler().fit_transform(numeric_df)
+
+def get_umap_embedding(scaled_data, nn=30, md=0.1):
+    # Pre-reduce with PCA to capture 90% of variance and remove noise
+    pca_temp = PCA(n_components=0.9).fit_transform(scaled_data)
+    reducer = umap.UMAP(n_neighbors=nn, min_dist=md, random_state=42)
+    return reducer.fit_transform(pca_temp)
+
+def get_clusters(pca_data, min_size=200):
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=min_size, min_samples=15, prediction_data=True
+    )
+    return clusterer.fit_predict(pca_data)
+
+def plot_umap_branded(embedding, color_source, title, is_price=True):
+    plt.figure(figsize=(10, 6))
+    if is_price:
+        price_ranks = rankdata(color_source) / len(color_source)
+        scatter = plt.scatter(
+            embedding[:, 0], embedding[:, 1],
+            c=price_ranks, cmap="viridis", s=10, alpha=0.6
+        )
+        plt.colorbar(scatter).set_label("Price Percentile (0=Low, 1=High)")
+    else:
+        unique_labels = np.unique(color_source)
+        cmap = plt.get_cmap("tab10", len(unique_labels))
+        for i, label in enumerate(unique_labels):
+            mask = color_source == label
+            plt.scatter(
+                embedding[mask, 0], embedding[mask, 1],
+                label=f"Cluster {label}" if label != -1 else "Noise",
+                s=15, alpha=0.8, color=cmap(i)
+            )
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.title(title, fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+# --- EXECUTION PIPELINE ---
+
+p_lower, p_upper = df_combined["Trended_Price"].quantile([0.005, 0.995])
+df_trimmed = df_combined[
+    (df_combined["Trended_Price"] > p_lower) & (df_combined["Trended_Price"] < p_upper)
+].copy()
+
+res_df = df_trimmed[df_trimmed["segment"] == "Residential"].copy()
+res_features = res_df.select_dtypes(include=[np.number]).drop(
+    columns=["Sold Price", "Adj_Price", "Trended_Price", "List Number", "ParcelId", "residuals"],
+    errors="ignore"
+)
+
+# Crucial: Define pca_full for the Scree/Loading plots
+res_scaled = get_scaled_data(res_features)
+pca_full = PCA().fit(res_scaled) 
+res_pca_data = pca_full.transform(res_scaled)
+
+# UMAP and Clustering
+res_emb_l = get_umap_embedding(res_scaled, nn=30, md=0.1)
+res_l_clusters = get_clusters(res_pca_data, min_size=200)
+res_target = res_df["Trended_Price"]
+```
+
+## Purposes of Exploratory Analysis
+
+- **Validation of Structural Drivers**: Confirming that physical characteristics (SqFt, Year Built) drive value independent of market volatility.
+- **Identification of Feature Interactions**: Real estate value is rarely additive; EDA reveals how variables "handshake" (e.g., Basement Finish value relative to Total GLA).
+- **Normalization & Transformation**: Identifying the need for Log-Scale Transformations to ensure "Vertical Equity"—treating a 5% error on a starter home with the same statistical weight as a 5% error on a luxury estate.
+
+## Scree Components
+:::: {.columns}
+
+::: {.column width="40%"}
+
+```{python}
+# | label: scree-plot
+exp_var = pca_full.explained_variance_ratio_
+cum_var = exp_var.cumsum()
+
+plt.figure(figsize=(8, 8))
+plt.bar(
+    range(1, len(exp_var) + 1), exp_var, alpha=0.4, color="gray", label="Individual"
+)
+plt.step(
+    range(1, len(cum_var) + 1),
+    cum_var,
+    where="mid",
+    color="#e74c3c",
+    lw=3,
+    label="Cumulative",
+)
+plt.axhline(y=0.9, color="#3498db", linestyle="--", alpha=0.7)
+
+plt.title("Scree Plot: Explained Variance", fontsize=18)
+plt.xlabel("Principal Components")
+plt.ylabel("Variance Ratio")
+plt.legend(loc="center right")
+plt.grid(axis="y", alpha=0.3)
+plt.show()
+```
+:::
+
+::: {.column width="60%"}
+
+```{python}
+#| label: loading-matrix
+#| cache: true
+
+# Identify which columns were actually kept after scaling
+numeric_df = res_features.select_dtypes(include=[np.number]).fillna(0)
+kept_cols = numeric_df.columns[numeric_df.var() > 1e-4]
+
+# Create the loadings DataFrame using the correct index
+loadings = pd.DataFrame(
+    pca_full.components_.T,
+    columns=[f"PC{i + 1}" for i in range(pca_full.n_components_)],
+    index=kept_cols,  # Use the filtered columns here
+)
+
+# Visualization
+plt.figure(figsize=(12, 10))
+# Showing top 15 features for readability
+sns.heatmap(
+    loadings.head(15),
+    cmap="RdBu_r",
+    center=0,
+    annot=True,
+    fmt=".2f",
+    cbar_kws={"label": "Weight"},
+)
+plt.title("Feature Loadings: Physical Drivers", fontsize=18)
+plt.show()
+```
+:::
+
+::::
+
+## Residential UMAP
+::: {layout-ncol=2}
+
+```{python}
+#| label: umap-viz-execution
+#| fig-cap: "Homes grouped by physical similarity"
+plot_umap_branded(res_emb_l, res_l_clusters, "Archetype Clusters", is_price=False)
+```
+
+```{python}
+#| label: Decile
+#| fig-cap: "The color gradient reveals the 'Value Manifold'"
+plot_umap_branded(res_emb_l, res_target, "Price Gradient", is_price=True)
+```
+
+:::
+
+# Linear Model {background-color="#460664ff"}
+
+```{python}
+#| label: setup
+#| include: false
+import warnings; warnings.filterwarnings("ignore")
+import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import OLSInfluence
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LassoCV, Lasso
+from sklearn.metrics import r2_score, mean_absolute_error
+import lightgbm as lgb
+import shap
+
+RS = 2026  # random-state seed used throughout
+plt.rcParams['figure.dpi'] = 110
+```
+
+## Linear Model Preperation
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+Starting Shape:
+```{python}
+#| label: clean_and_engineer_1
+
+RS = 2026  # random-state seed used throughout
+plt.rcParams['figure.dpi'] = 110
+
+def _is_stringlike(s):
+    """True for object-dtype OR pandas 2.x pyarrow-string columns."""
+    return s.dtype == object or str(s.dtype).lower().startswith('string')
+
+df_shared = df_combined.copy()
+
+# Coerce dollar-formatted columns ("$97,549.00", "-", blanks) into floats.
+# Runs unconditionally — astype(str) is a no-op for already-numeric data,
+# so this is safe regardless of whether pandas read these as object,
+# pyarrow-string, or numeric to begin with.
+for c in ['Land Value','Total Value']:
+    if c in df_shared.columns:
+        s = df_shared[c].astype(str).str.replace(r'[\$,\s]', '', regex=True)
+        df_shared[c] = pd.to_numeric(s, errors='coerce').astype('float64')
+
+# Drop post-sale / leakage / redundant-count columns we never want in either model
+DROP_COMMON = ['Sold Price','Sold Date','Concessions Amount','Age', 'Adj_Price',
+               'ln_Price','Time_1','Time_2','Time_3',
+               'Count_DetGarage','Count_ DetCarport','Count_Barn',
+               'Count_Guest_House','Count_Pools','Count_Recreational_Courts',
+               'Count_Shed','Count_Gazebo_Pavilion']
+df_shared = df_shared.drop(columns=[c for c in DROP_COMMON if c in df_shared.columns])
+
+df_shared = df_shared.reset_index(drop=True)
+
+print(f"Shape: {df_shared.shape[0]:,} rows × {df_shared.shape[1]} columns")
+```
+
+Segment breakdown:
+```{python}
+#| label: clean_and_engineer_2
+
+print(df_shared['segment'].value_counts().to_string())
+
+df_lin = df_shared.copy()
+
+# Target
+df_lin['ln_Trended_Price'] = np.log(df_lin['Trended_Price'])
+
+# Transformed versions of heavy-tailed predictors (matches MB 3)
+df_lin['AsinH_Acreage']                    = np.arcsinh(df_lin['Acreage'])
+df_lin['AsinH_Land_Value']                 = np.arcsinh(df_lin['Land Value'])
+df_lin['AsinH_Total_Value']                = np.arcsinh(df_lin['Total Value'])
+df_lin['AsinH_Tot_Bsmt']                   = np.arcsinh(df_lin['Tot Bsmt'])
+df_lin['AsinH_BsmtFin_Pct_Wghted']         = np.arcsinh(df_lin['BsmtFinishPct_Weighted'])
+df_lin['AsinH_Carport_Area']               = np.arcsinh(df_lin['CarportArea'])
+df_lin['AsinH_Garage_Area']                = np.arcsinh(df_lin['GarageArea'])
+df_lin['AsinH_SqFt_Det_Garage']            = np.arcsinh(df_lin['SqFt_DetGarage'])
+df_lin['AsinH_SqFt_Det_Carport']           = np.arcsinh(df_lin['SqFt_DetCarport'])
+df_lin['AsinH_SqFt_Barn']                  = np.arcsinh(df_lin['Sqft_Barn'])
+df_lin['AsinH_SqFt_Guest_House']           = np.arcsinh(df_lin['SqFt_Guest_House'])
+df_lin['AsinH_SqFt_Pools']                 = np.arcsinh(df_lin['SqFt_Pools'])
+df_lin['AsinH_SqFt_Recreational_Courts']   = np.arcsinh(df_lin['SqFt_Recreational_Courts'])
+df_lin['AsinH_SqFt_Shed']                  = np.arcsinh(df_lin['SqFt_Shed'])
+df_lin['AsinH_SqFt_Gazebo_Pavilion']       = np.arcsinh(df_lin['SqFt_Gazebo_Pavilion'])
+
+# Drop raw versions that have been replaced (and TotGLA — linear uses ln_GLA from the CSV)
+DROP_LIN = ['Trended_Price','TotGLA','Acreage','Land Value','Total Value','Tot Bsmt',
+            'BsmtFinishPct_Weighted','CarportArea','GarageArea',
+            'SqFt_DetGarage','SqFt_DetCarport','Sqft_Barn','SqFt_Guest_House',
+            'SqFt_Pools','SqFt_Recreational_Courts','SqFt_Shed','SqFt_Gazebo_Pavilion']
+df_lin = df_lin.drop(columns=[c for c in DROP_LIN if c in df_lin.columns])
+
+# One-hot categoricals
+DUMMY_COLS = ['PropTypeDescription','SpecificPropTypeDescription',
+              'NbhdCode2','Main_StyleDesc','segment']
+df_lin_enc = df_lin.copy()
+for col in DUMMY_COLS:
+    if col in df_lin_enc.columns:
+        d = pd.get_dummies(df_lin_enc[col], prefix=col, drop_first=True, dtype=int)
+        df_lin_enc = pd.concat([df_lin_enc.drop(columns=col), d], axis=1)
+df_lin_enc = df_lin_enc.fillna(0)
+
+y_lin_all = df_lin_enc['ln_Trended_Price'].astype(float)
+X_lin_all = (df_lin_enc.select_dtypes(include=[np.number])
+             .drop(columns=['ln_Trended_Price']).astype(float))
+```
+
+:::
+
+::: {.column width="50%"}
+
+Post One-Hot-Encoding Shape:
+
+```{python}
+#| label: clean_and_engineer_3
+print(f"Shape: {X_lin_all.shape[0]:,} rows × {X_lin_all.shape[1]} columns")
+
+# Baseline OLS — used only to flag influential observations
+base = sm.OLS(y_lin_all, sm.add_constant(X_lin_all)).fit()
+infl = OLSInfluence(base)
+drop_mask = ((infl.cooks_distance[0] > 4.0/len(y_lin_all))
+             | (np.abs(infl.resid_studentized_internal) > 3.0))
+
+X_keep = X_lin_all[~drop_mask].reset_index(drop=True)
+y_keep = y_lin_all[~drop_mask].reset_index(drop=True)
+seg_keep = df_lin.loc[~drop_mask, 'segment'].reset_index(drop=True)
+
+X_tr_lin, X_te_lin, y_tr_lin, y_te_lin = train_test_split(
+    X_keep, y_keep, test_size=0.2, random_state=RS)
+seg_te_lin = seg_keep.loc[X_te_lin.index].reset_index(drop=True)
+X_tr_lin = X_tr_lin.reset_index(drop=True)
+X_te_lin = X_te_lin.reset_index(drop=True)
+y_tr_lin = y_tr_lin.reset_index(drop=True)
+y_te_lin = y_te_lin.reset_index(drop=True)
+```
+
+Drop Outliers:
+```{python}
+#| label: clean_and_engineer_4
+print(f"Dropped {drop_mask.sum():,} influence outliers "
+      f"({drop_mask.mean()*100:.2f}% of data)")
+```
+
+Data Split 80/20:
+```{python}
+#| label: clean_and_engineer_5
+print(f"Train: {X_tr_lin.shape[0]:,}   Test: {X_te_lin.shape[0]:,}")
+```
+
+:::
+:::
+
+## Linear Modeling
+
+```{python}
+#| label: linear_fit
+
+POLY_COLS   = ['ln_GLA','Quality_Weighted','EffYearBuilt_Weighted','AsinH_Acreage']
+KEY_NUMERIC = ['ln_GLA','Quality_Weighted','EffYearBuilt_Weighted',
+               'AsinH_Acreage','AsinH_Land_Value','AsinH_Total_Value']
+seg_cols    = [c for c in X_tr_lin.columns if c.startswith('segment_')]
+
+def build_poly_seg(X_in, ref_cols=None):
+    """Add squared POLY_COLS and segment×KEY_NUMERIC interactions. If
+    `ref_cols` is supplied, the output is reindexed to match it so a
+    single-row prediction lines up with the training matrix."""
+    X2 = X_in.copy()
+    for c in POLY_COLS:
+        if c in X2.columns:
+            X2[f'{c}_sq'] = X2[c] ** 2
+    for sc in seg_cols:
+        for kn in KEY_NUMERIC:
+            if kn in X2.columns:
+                X2[f'{sc}_x_{kn}'] = X2[sc] * X2[kn]
+    if ref_cols is not None:
+        X2 = X2.reindex(columns=ref_cols, fill_value=0)
+    return X2
+
+X_tr_v4 = build_poly_seg(X_tr_lin)
+X_te_v4 = build_poly_seg(X_te_lin, ref_cols=X_tr_v4.columns)
+print(f"v4 feature matrix: {X_tr_v4.shape[1]} features "
+      f"(base {X_tr_lin.shape[1]} + {X_tr_v4.shape[1]-X_tr_lin.shape[1]} engineered)")
+
+# Standardise for Lasso (shrinkage needs comparable scales)
+scaler = StandardScaler()
+Xtr_s = scaler.fit_transform(X_tr_v4)
+
+# Lasso — CV-tuned α over a log grid
+lasso = LassoCV(alphas=np.logspace(-4, 0, 40), cv=5,
+                max_iter=20000, random_state=RS).fit(Xtr_s, y_tr_lin)
+
+# Selected feature names (non-zero Lasso coefficients)
+sel_names = X_tr_v4.columns[np.where(lasso.coef_ != 0)[0]].tolist()
+
+# Refit plain OLS on UNSCALED selected features — gives us unbiased
+# coefficients with standard errors for interpretation.
+Xtr_sel = X_tr_v4[sel_names]
+Xte_sel = X_te_v4[sel_names]
+Xc_tr = sm.add_constant(Xtr_sel, has_constant='add')
+Xc_te = (sm.add_constant(Xte_sel, has_constant='add')
+         .reindex(columns=Xc_tr.columns, fill_value=0))
+
+linear_model = sm.OLS(y_tr_lin, Xc_tr).fit()
+
+yhat_tr = linear_model.predict(Xc_tr)
+yhat_te = linear_model.predict(Xc_te)
+r2_tr_lin = r2_score(y_tr_lin, yhat_tr)
+r2_te_lin = r2_score(y_te_lin, yhat_te)
+mae_te_lin = mean_absolute_error(y_te_lin, yhat_te)
+dmae_te_lin = np.exp(y_te_lin.values).mean() * (np.exp(mae_te_lin) - 1)
+
+print(f"Lasso tuned α     : {lasso.alpha_:.5f}")
+print(f"Features selected : {len(sel_names)} / {X_tr_v4.shape[1]}")
+print(f"Train R²          : {r2_tr_lin:.4f}")
+print(f"Test  R²          : {r2_te_lin:.4f}")
+print(f"Train–Test gap    : {r2_tr_lin - r2_te_lin:+.4f}")
+print(f"Approx $ MAE      : ${dmae_te_lin:,.0f}")
+
+```
+
+```{python}
+#| label: linear_summary
+#| output-height: 900px
+
+print(linear_model.summary())
+
+```
+
+## Linear model assumptions
+
+Classical OLS assumes four things, all checked by the diagnostics below:
+
+1. **Linearity** — residuals vs fitted shows no curvature.
+2. **Independence of errors** — Durbin-Watson ≈ 2.0.
+3. **Normality of residuals** — Q-Q plot follows the reference line.
+4. **Homoscedasticity** — constant residual variance (Breusch-Pagan p).
+
+All four assumptions matter more for *inference* (interpreting coefficients,
+reporting p-values) than for *prediction accuracy*. A model can violate
+homoscedasticity and still produce useful predictions — the stated
+uncertainty bounds just can't be trusted without a robust-standard-error
+refit.
+
+## Linear Diagnostic Plots
+
+```{python}
+#| label: linear_diagnostic_plots
+
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import het_breuschpagan
+
+# Segment labels aligned to the train split (seg_keep was built pre-split)
+seg_tr_lin = seg_keep.loc[X_tr_lin.index].reset_index(drop=True)
+resid_lin = y_tr_lin.values - yhat_tr.values
+
+fig, axes = plt.subplots(2, 3, figsize=(16, 6))
+
+axes[0,0].scatter(yhat_tr, resid_lin, alpha=0.2, s=8, color="#2980b9")
+axes[0,0].axhline(0, color="red", linestyle="--")
+axes[0,0].set(title="Residuals vs Fitted", xlabel="Fitted", ylabel="Residuals")
+
+(osm, osr), (slope, intercept, _) = scipy_stats.probplot(resid_lin, dist="norm")
+axes[0,1].scatter(osm, osr, alpha=0.3, s=8, color="#2980b9")
+axes[0,1].plot(osm, slope * np.array(osm) + intercept, color="red")
+axes[0,1].set(title="Normal Q-Q", xlabel="Theoretical Quantiles", ylabel="Sample Quantiles")
+
+axes[0,2].scatter(yhat_tr, np.sqrt(np.abs(resid_lin)), alpha=0.2, s=8, color="#27ae60")
+axes[0,2].set(title="Scale-Location", xlabel="Fitted", ylabel="√|Residuals|")
+
+colors = {"Residential": "#2980b9", "Land Sales": "#f39c12", "Multi-Family": "#9b59b6"}
+for seg, col in colors.items():
+    mask = (seg_tr_lin == seg).values
+    if mask.any():
+        axes[1,0].scatter(yhat_tr[mask], resid_lin[mask], alpha=0.25, s=8, color=col, label=seg)
+axes[1,0].axhline(0, color="red", linestyle="--")
+axes[1,0].set(title="Residuals vs Fitted by Segment",
+              xlabel="Fitted", ylabel="Residuals")
+axes[1,0].legend()
+
+axes[1,1].hist(resid_lin, bins=60, color="#9b59b6", edgecolor="white")
+axes[1,1].axvline(0, color="red", linestyle="--")
+axes[1,1].set(title="Residual Distribution", xlabel="Residuals", ylabel="Count")
+
+axes[1,2].scatter(y_te_lin, yhat_te, alpha=0.2, s=8, color="#e67e22")
+axes[1,2].plot([y_te_lin.min(), y_te_lin.max()], [y_te_lin.min(), y_te_lin.max()],
+               color="red", linestyle="--")
+axes[1,2].set(title="Actual vs Predicted (Test)",
+              xlabel="Actual ln(Price)", ylabel="Predicted ln(Price)")
+
+plt.suptitle("Linear Model — Lasso→OLS Diagnostics", fontsize=14)
+plt.tight_layout()
+plt.show()
+
+# ── Assumption stats ─────────────────────────────────────────────────
+try:
+    _, bp_p_lin, _, _ = het_breuschpagan(resid_lin, Xc_tr)
+except Exception:
+    bp_p_lin = np.nan
+
+print(f"Durbin-Watson        : {sm.stats.stattools.durbin_watson(resid_lin):.3f}")
+print(f"Breusch-Pagan p      : {bp_p_lin:.2e}")
+print(f"Residual skew / kurt : {pd.Series(resid_lin).skew():+.3f} / "
+      f"{pd.Series(resid_lin).kurt():.3f}")
+```
+
+# Light GBM {background-color="#064d00ff"}
+
+## Non-Linear Modeling
+
+::: {.columns}
+
+::: {.column width="50%"}
+
+Starting Shape:
+```{python}
+#| label: nl_prep
+
+df_nl = df_shared.copy()
+
+# Non-linear uses raw living area
+if 'TotGLA' in df_nl.columns:
+    df_nl = df_nl.rename(columns={'TotGLA': 'GLA'})
+# Log-target, then drop raw
+df_nl['ln_Trended_Price'] = np.log(df_nl['Trended_Price'])
+df_nl = df_nl.drop(columns=['Trended_Price'])
+if 'ln_GLA' in df_nl.columns:
+    df_nl = df_nl.drop(columns=['ln_GLA'])
+df_nl = df_nl.reset_index(drop=True)
+
+# One-hot encode the same categoricals
+df_nl_enc = df_nl.copy()
+for col in DUMMY_COLS:
+    if col in df_nl_enc.columns:
+        d = pd.get_dummies(df_nl_enc[col], prefix=col, drop_first=True, dtype=int)
+        df_nl_enc = pd.concat([df_nl_enc.drop(columns=col), d], axis=1)
+df_nl_enc = df_nl_enc.fillna(0)
+
+y_nl_all = df_nl_enc['ln_Trended_Price'].astype(float)
+X_nl_all = (df_nl_enc.select_dtypes(include=[np.number])
+            .drop(columns=['ln_Trended_Price']).astype(float))
+
+# LightGBM rejects JSON-special characters in feature names
+def _clean(name): return re.sub(r'[^A-Za-z0-9_]', '_', name).strip('_')
+CLEAN_MAP, seen = {}, {}
+for c in X_nl_all.columns:
+    v = _clean(c)
+    if v in seen: seen[v] += 1; v = f"{v}_{seen[v]}"
+    else:         seen[v] = 0
+    CLEAN_MAP[c] = v
+X_nl_all = X_nl_all.rename(columns=CLEAN_MAP)
+ORIG_OF = {v:k for k,v in CLEAN_MAP.items()}   # for readable plot labels
+
+print(f"Shape: {X_nl_all.shape[0]:,} rows × {X_nl_all.shape[1]} cols")
+```
+
+Drop Outliers:
+```{python}
+#| label: nl_split
+
+base_nl = sm.OLS(y_nl_all, sm.add_constant(X_nl_all)).fit()
+infl_nl = OLSInfluence(base_nl)
+drop_nl = ((infl_nl.cooks_distance[0] > 4.0/len(y_nl_all))
+           | (np.abs(infl_nl.resid_studentized_internal) > 3.0))
+
+X_nl_keep = X_nl_all[~drop_nl].reset_index(drop=True)
+y_nl_keep = y_nl_all[~drop_nl].reset_index(drop=True)
+seg_nl_keep = df_nl.loc[~drop_nl, 'segment'].reset_index(drop=True)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_nl_keep, y_nl_keep, test_size=0.2, random_state=RS)
+seg_test = seg_nl_keep.loc[X_test.index].reset_index(drop=True)
+X_train = X_train.reset_index(drop=True); X_test = X_test.reset_index(drop=True)
+y_train = y_train.reset_index(drop=True); y_test = y_test.reset_index(drop=True)
+
+print(f"Dropped {drop_nl.sum():,} outliers  "
+      f"({drop_nl.mean()*100:.2f}%)   ")
+```
+
+Data Split 80/20:
+```{python}
+#| label: nl_split_summary
+print(f"Train {X_train.shape[0]:,}   Test {X_test.shape[0]:,}")
+```
+
+:::
+
+::: {.column width="50%"}
+
+Model Output: 
+```{python}
+#| label: nl_fit
+
+# Tuned hyperparameters — RandomizedSearchCV winner from Model Building 5
+LGB_PARAMS = dict(
+    num_leaves=45, learning_rate=0.1211, n_estimators=672,
+    min_child_samples=13, subsample=0.9138, colsample_bytree=0.7861,
+    reg_lambda=1.4174, random_state=RS, n_jobs=-1, verbose=-1,
+)
+nl_model = lgb.LGBMRegressor(**LGB_PARAMS).fit(X_train, y_train)
+
+yhat_tr_nl = nl_model.predict(X_train)
+yhat_te_nl = nl_model.predict(X_test)
+r2_tr_nl = r2_score(y_train, yhat_tr_nl)
+r2_te_nl = r2_score(y_test,  yhat_te_nl)
+mae_te_nl = mean_absolute_error(y_test, yhat_te_nl)
+dmae_te_nl = np.exp(y_test.values).mean() * (np.exp(mae_te_nl) - 1)
+
+print(f"LightGBM")
+print(f"  Train R²        : {r2_tr_nl:.4f}")
+print(f"  Test  R²        : {r2_te_nl:.4f}")
+print(f"  Train–Test gap  : {r2_tr_nl - r2_te_nl:+.4f}")
+print(f"  Test log-MAE    : {mae_te_nl:.4f}")
+print(f"  Approx $ MAE    : ${dmae_te_nl:,.0f}")
+```
+
+:::
+:::
+
+## Nonlinear model assumptions
+
+LightGBM is a gradient-boosted tree model, and trees assume far less than
+linear regression. OLS assumptions **do not apply** to tree
+models. Splits are threshold-based and scale-invariant, so log transforms,
+polynomial terms, and engineered interactions are unnecessary. The tree
+discovers all of that from the data. What LightGBM *does* depend on:
+
+1. **i.i.d. train / test data** — same distribution, no drift.
+2. **No extrapolation** — trees can't extend trends past the training range.
+3. **Adequate data per region** — sparse segments give noisier predictions
+   and wider intervals.
+4. **Stable feature definitions at inference time.**
+
+Because the classical assumptions don't apply, the diagnostic plots
+are **descriptive rather than assumption tests**. They check the things
+that actually matter for a tree model: prediction bias, over/under-fitting, missed non-linear patterns, and calibration for price levels and segments. 
+
+## Non-Linear Diagnostic Plots
+
+```{python}
+#| label: nl_diagnostics
+#| fig-height: 10
+
+# Segment labels aligned to the nonlinear train split
+seg_tr_nl = seg_nl_keep.loc[X_train.index].reset_index(drop=True)
+
+resid_tr_nl = y_train.values - yhat_tr_nl
+resid_te_nl = y_test.values  - yhat_te_nl
+
+fig, axes = plt.subplots(2, 3, figsize=(16, 6))
+
+# ── (1) Actual vs Predicted (Test) ──────────────────────────────────
+axes[0,0].scatter(y_test, yhat_te_nl, alpha=0.2, s=8, color="#e67e22")
+axes[0,0].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()],
+               color="red", linestyle="--")
+axes[0,0].set(title="Actual vs Predicted (Test)",
+              xlabel="Actual ln(Price)", ylabel="Predicted ln(Price)")
+
+# ── (2) Residuals vs Fitted by Segment (Train) ──────────────────────
+colors = {"Residential": "#2980b9", "Land Sales": "#f39c12", "Multi-Family": "#9b59b6"}
+for seg, col in colors.items():
+    mask = (seg_tr_nl == seg).values
+    if mask.any():
+        axes[0,1].scatter(yhat_tr_nl[mask], resid_tr_nl[mask],
+                          alpha=0.25, s=8, color=col, label=seg)
+axes[0,1].axhline(0, color="red", linestyle="--")
+axes[0,1].set(title="Residuals vs Fitted by Segment (Train)",
+              xlabel="Fitted", ylabel="Residuals")
+axes[0,1].legend()
+
+# ── (3) Train vs Test residual distributions (overfitting check) ────
+axes[0,2].hist(resid_tr_nl, bins=60, alpha=0.55, color="#2980b9",
+               edgecolor="white", label=f"Train (σ={resid_tr_nl.std():.3f})",
+               density=True)
+axes[0,2].hist(resid_te_nl, bins=60, alpha=0.55, color="#e67e22",
+               edgecolor="white", label=f"Test  (σ={resid_te_nl.std():.3f})",
+               density=True)
+axes[0,2].axvline(0, color="red", linestyle="--")
+axes[0,2].set(title="Train vs Test Residuals (Overfit Check)",
+              xlabel="Residual (ln price)", ylabel="Density")
+axes[0,2].legend()
+
+# ── (4) Residuals vs GLA (missed-nonlinearity check on top feature) ─
+# GLA column name may have been cleaned — find it
+gla_col = next((c for c in X_test.columns if ORIG_OF.get(c, c) == 'GLA'), None)
+if gla_col is not None:
+    gla_vals = X_test[gla_col].values
+    axes[1,0].scatter(gla_vals, resid_te_nl, alpha=0.25, s=8, color="#27ae60")
+    axes[1,0].axhline(0, color="red", linestyle="--")
+    # LOWESS-ish smoother: bin by GLA decile and plot the mean residual
+    order = np.argsort(gla_vals)
+    gla_sorted = gla_vals[order]; resid_sorted = resid_te_nl[order]
+    n_bins = 20
+    edges = np.linspace(0, len(gla_sorted), n_bins + 1, dtype=int)
+    bin_x, bin_y = [], []
+    for i in range(n_bins):
+        lo, hi = edges[i], edges[i+1]
+        if hi > lo:
+            bin_x.append(gla_sorted[lo:hi].mean())
+            bin_y.append(resid_sorted[lo:hi].mean())
+    axes[1,0].plot(bin_x, bin_y, color="#c0392b", linewidth=2, label="Binned mean")
+    axes[1,0].set(title="Residuals vs GLA (Test)",
+                  xlabel="GLA", ylabel="Residual (ln price)")
+    axes[1,0].legend()
+else:
+    axes[1,0].text(0.5, 0.5, "GLA column not found", ha='center', va='center',
+                   transform=axes[1,0].transAxes)
+    axes[1,0].set(title="Residuals vs GLA (Test)")
+
+# ── (5) Calibration by price decile ─────────────────────────────────
+deciles = pd.qcut(yhat_te_nl, q=10, duplicates='drop')
+calib = pd.DataFrame({'pred': yhat_te_nl, 'actual': y_test.values,
+                      'bin': deciles}).groupby('bin', observed=True).agg(
+    mean_pred=('pred', 'mean'),
+    mean_actual=('actual', 'mean'),
+    n=('pred', 'size')
+).reset_index(drop=True)
+# Plot in dollar space — easier for stakeholders to read
+calib_pred_k   = np.exp(calib['mean_pred'])   / 1000
+calib_actual_k = np.exp(calib['mean_actual']) / 1000
+axes[1,1].plot(calib_pred_k, calib_actual_k,
+               'o-', color="#8e44ad", markersize=8)
+lims = [min(calib_pred_k.min(), calib_actual_k.min()),
+        max(calib_pred_k.max(), calib_actual_k.max())]
+axes[1,1].plot(lims, lims, color="red", linestyle="--", label="Perfect calibration")
+axes[1,1].set(title="Calibration by Price Decile (Test)",
+              xlabel="Mean Predicted ($K)", ylabel="Mean Actual ($K)")
+axes[1,1].legend()
+
+# ── (6) 95% PI coverage by segment ──────────────────────────────────
+q_lo_global, q_hi_global = np.quantile(resid_te_nl, [0.025, 0.975])
+coverage_rows = []
+for seg in sorted(seg_test.unique()):
+    m = (seg_test == seg).values
+    if m.sum() >= 20:
+        q_lo, q_hi = np.quantile(resid_te_nl[m], [0.025, 0.975])
+    else:
+        q_lo, q_hi = q_lo_global, q_hi_global
+    # A point is "covered" if its own residual falls inside the segment's PI bounds
+    within = ((resid_te_nl[m] >= q_lo) & (resid_te_nl[m] <= q_hi)).mean()
+    coverage_rows.append((seg, within, m.sum()))
+
+segs   = [r[0] for r in coverage_rows]
+covs   = [r[1] for r in coverage_rows]
+counts = [r[2] for r in coverage_rows]
+bar_colors = [colors.get(s, "#7f8c8d") for s in segs]
+bars = axes[1,2].bar(segs, covs, color=bar_colors, edgecolor="white")
+axes[1,2].axhline(0.95, color="red", linestyle="--", label="Nominal 95%")
+for bar, cov, n in zip(bars, covs, counts):
+    axes[1,2].text(bar.get_x() + bar.get_width()/2, cov + 0.01,
+                   f"{cov:.1%}\nn={n}", ha='center', va='bottom', fontsize=9)
+axes[1,2].set(title="95% PI Coverage by Segment (Test)",
+              ylabel="Empirical coverage", ylim=(0, 1.05))
+axes[1,2].legend(loc='lower right')
+
+plt.suptitle("Non-Linear Model — LightGBM Diagnostics", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+## Bee-Swarm Plot
+
+```{python}
+#| label: nl_beeswarm
+
+explainer = shap.TreeExplainer(nl_model)
+sv_test   = explainer.shap_values(X_test)
+base_val  = (float(explainer.expected_value)
+             if np.isscalar(explainer.expected_value)
+             else float(explainer.expected_value[0]))
+print(f"SHAP matrix: {sv_test.shape}   "
+      f"base value E[ln price] = {base_val:.4f}  ≈ ${np.exp(base_val):,.0f}")
+
+X_test_pretty = X_test.rename(columns=ORIG_OF)
+shap.summary_plot(sv_test, X_test_pretty, max_display=15,
+                  plot_size=(16, 7), show=False)
+plt.title("SHAP beeswarm — LightGBM, test set")
+plt.yticks(fontsize=8)
+plt.tight_layout()
+plt.show()
+```
+
+## Waterfall Plot: Median Home
+
+```{python}
+#| label: waterfall_context_helper
+
+# Training-set medians for every feature (on the same scale the model sees)
+#| label: waterfall_context_helper
+
+_feature_medians = X_train.median()
+
+def waterfall_context(idx, shap_vals, feature_names_map, X_data, n_top=10):
+    """
+    Compact companion table for a waterfall plot.
+    Returns a styled DataFrame sized for a 50% page column.
+    """
+    row_vals = X_data.iloc[idx]
+    row_shap = shap_vals[idx]
+
+    order = np.argsort(-np.abs(row_shap))[:n_top]
+
+    rows = []
+    for i in order:
+        col_clean  = X_data.columns[i]
+        col_pretty = feature_names_map.get(col_clean, col_clean)
+        val        = row_vals.iloc[i]
+        median     = _feature_medians.get(col_clean, np.nan)
+
+        is_dummy = set(X_data[col_clean].unique()).issubset({0, 1})
+        if is_dummy:
+            val_str    = str(int(val))
+            median_str = f"{median:.2f}"
+        else:
+            val_str    = f"{val:,.2f}"
+            median_str = f"{median:,.2f}" if not np.isnan(median) else "—"
+
+        rows.append({
+            'Feature': col_pretty,
+            'Value':   val_str,
+            'Median':  median_str,
+        })
+
+    df = pd.DataFrame(rows)
+    return (df.style
+              .hide(axis='index')
+              .set_table_styles([
+                  {'selector': 'table',
+                   'props': [('font-size', '14px'),
+                             ('width', '100%'),
+                             ('table-layout', 'fixed'),
+                             ('margin-top', '10px')]},
+                  {'selector': 'th',
+                   'props': [('font-size', '14px'),
+                             ('font-weight', 'bold'),
+                             ('text-align', 'left'),
+                             ('padding', '6px 8px'),
+                             ('border-bottom', '2px solid #333')]},
+                  {'selector': 'td',
+                   'props': [('font-size', '14px'),
+                             ('padding', '6px 8px'),
+                             ('word-wrap', 'break-word'),
+                             ('overflow-wrap', 'break-word'),
+                             ('line-height', '1.3')]},
+                  {'selector': 'td:nth-child(1)',
+                   'props': [('width', '58%')]},
+                  {'selector': 'td:nth-child(2), td:nth-child(3)',
+                   'props': [('width', '21%'),
+                             ('text-align', 'right'),
+                             ('font-variant-numeric', 'tabular-nums')]},
+              ]))
+```
+
+::: {.columns}
+
+::: {.column width="50%"}
+
+```{python}
+#| label: nl_pick_rows
+# Median-priced residential property from the test set
+tb = pd.DataFrame({'seg': seg_test.values,
+                   'y':   y_test.values,
+                   'pred': nl_model.predict(X_test)})
+med_res_idx = (tb[tb['seg']=='Residential']
+               .assign(r=lambda d: np.abs(d['y'] - d['y'].median()))
+               .nsmallest(1, 'r').index[0])
+
+p = float(nl_model.predict(X_test.iloc[med_res_idx:med_res_idx+1])[0])
+a = float(y_test.iloc[med_res_idx])
+print(f"  Median residential     predicted ${np.exp(p):>10,.0f}   "
+      f"actual ${np.exp(a):>10,.0f}")
+
+plt.close('all')  # nuke any stale figure
+
+shap.plots._waterfall.waterfall_legacy(
+    expected_value=base_val,
+    shap_values=sv_test[med_res_idx],
+    features=X_test.iloc[med_res_idx].values,
+    feature_names=[ORIG_OF[c] for c in X_test.columns],
+    max_display=15, show=False,
+)
+
+# Grab whatever figure SHAP just made and resize it in place
+fig = plt.gcf()
+fig.set_size_inches(14, 6, forward=True)
+
+plt.suptitle("Waterfall — median-priced residential", y=1.02)
+plt.tight_layout()
+plt.show()
+```
+
+:::
+
+::: {.column width="50%"}
+
+```{python}
+#| label: nl_waterfall_context_median
+
+waterfall_context(med_res_idx, sv_test, ORIG_OF, X_test, n_top=10)
+```
+
+:::
+:::
+
+## Waterfall Plot: Luxury Home
+
+::: {.columns}
+
+::: {.column width="50%"}
+
+```{python}
+#| label: nl_waterfall_luxury
+# Highest-priced residential property from the test set
+lux_res_idx = tb[tb['seg']=='Residential'].nlargest(1, 'y').index[0]
+
+p = float(nl_model.predict(X_test.iloc[lux_res_idx:lux_res_idx+1])[0])
+a = float(y_test.iloc[lux_res_idx])
+print(f"  Luxury residential     predicted ${np.exp(p):>10,.0f}   "
+      f"actual ${np.exp(a):>10,.0f}")
+
+plt.close('all')
+
+shap.plots._waterfall.waterfall_legacy(
+    expected_value=base_val,
+    shap_values=sv_test[lux_res_idx],
+    features=X_test.iloc[lux_res_idx].values,
+    feature_names=[ORIG_OF[c] for c in X_test.columns],
+    max_display=15, show=False,
+)
+
+fig = plt.gcf()
+fig.set_size_inches(14, 6, forward=True)
+
+plt.suptitle("Waterfall — luxury residential", y=1.02)
+plt.tight_layout()
+plt.show()
+```
+
+:::
+
+::: {.column width="50%"}
+
+```{python}
+waterfall_context(lux_res_idx, sv_test, ORIG_OF, X_test, n_top=10)
+```
+
+:::
+:::
+
+## Comparison
+
+```{python}
+#| label: model_comparison_table
+
+comparison = pd.DataFrame(
+    {
+        'R² (Train)':    [r2_score(y_tr_lin, yhat_tr),
+                          r2_score(y_train, yhat_tr_nl)],
+        'R² (Test)':     [r2_score(y_te_lin, yhat_te),
+                          r2_score(y_test,  yhat_te_nl)],
+        'MAE (Test, ln)': [mean_absolute_error(y_te_lin, yhat_te),
+                           mean_absolute_error(y_test,  yhat_te_nl)],
+        'MAE (Test, $)': [np.exp(y_te_lin.values).mean() *
+                            (np.exp(mean_absolute_error(y_te_lin, yhat_te)) - 1),
+                          np.exp(y_test.values).mean() *
+                            (np.exp(mean_absolute_error(y_test,  yhat_te_nl)) - 1)],
+    },
+    index=['Linear (Lasso→OLS)', 'Non-Linear (LightGBM)']
+)
+
+# Format nicely for display
+comparison_display = comparison.copy()
+comparison_display['R² (Train)']     = comparison_display['R² (Train)'].map('{:.4f}'.format)
+comparison_display['R² (Test)']      = comparison_display['R² (Test)'].map('{:.4f}'.format)
+comparison_display['MAE (Test, ln)'] = comparison_display['MAE (Test, ln)'].map('{:.4f}'.format)
+comparison_display['MAE (Test, $)']  = comparison_display['MAE (Test, $)'].map('${:,.0f}'.format)
+
+print(comparison_display.to_string())
+```
+
+
+# Concluding Thoughts {background-color="#4d0000ff"}
+
+## Next Steps
+
+## New Tools we Learned to Use
+
+- hdbscan
+- lightgbm
+- random forest
+- SHAP library
+
+## Security
