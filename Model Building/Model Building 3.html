@@ -208,7 +208,7 @@ window.Quarto = {
 <section id="data-preparation" class="level1" data-number="3">
 <h1 data-number="3"><span class="header-section-number">3</span> Data Preparation</h1>
 <p>The prep pipeline mirrors Model Building 2 — impute basement / outbuilding square footages to zero (NA here means “the property does not have one”), drop leakage variables, clean the <code>$</code> / <code>,</code> characters from <code>Land Value</code> and <code>Total Value</code>, drop a handful of rows with missing <code>EffYearBuilt_Weighted</code> / <code>Quality_Weighted</code>, and apply log / arcsinh transforms to the heavy-tailed continuous features.</p>
-<div id="data_cleaning" class="cell" data-execution_count="3">
+<div id="data_cleaning" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>data <span class="op">=</span> pd.read_csv(</span>
@@ -301,7 +301,7 @@ Multi-Family      52</code></pre>
 <section id="drop-outliers" class="level1" data-number="4">
 <h1 data-number="4"><span class="header-section-number">4</span> Drop Outliers</h1>
 <p>Drop outliers from influence diagnostics on a baseline OLS fit. The goal is simple: within a 10% ceiling, cut only the rows whose <em>residuals or leverage values</em> clearly indicate that one linear surface cannot serve the whole market.</p>
-<div id="encode_for_diagnostics" class="cell" data-execution_count="4">
+<div id="encode_for_diagnostics" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ── Dummy-encode all categoricals in one pass ───────────────────────────────</span></span>
@@ -327,7 +327,7 @@ Multi-Family      52</code></pre>
 <pre><code>Encoded feature matrix : 11526 rows | 79 predictors</code></pre>
 </div>
 </div>
-<div id="baseline_ols_for_diagnostics" class="cell" data-execution_count="5">
+<div id="baseline_ols_for_diagnostics" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ══════════════════════════════════════════════════════════════════════════════</span></span>
@@ -372,7 +372,7 @@ Baseline OLS AIC            : -10013.5
   Leverage &gt; 2p/n (0.0139)  :   706 rows ( 6.13%)</code></pre>
 </div>
 </div>
-<div id="drop_combos" class="cell" data-execution_count="6">
+<div id="drop_combos" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ══════════════════════════════════════════════════════════════════════════════</span></span>
@@ -424,7 +424,7 @@ Baseline OLS AIC            : -10013.5
 </div>
 </div>
 <p>A (Cook’s D &gt; 4/n) and B (|studentized residual| &gt; 3) are the two rules that a linear-model textbook would endorse without further justification. Layers C and D buy almost nothing in R² or AIC once A and B are in, and they spend more of the 10% budget. We lock in <strong>A + B</strong> — it drops ≈4.9% of rows and lifts in-sample R² from 0.78 to 0.88.</p>
-<div id="apply_drop" class="cell" data-execution_count="7">
+<div id="apply_drop" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>drop_mask <span class="op">=</span> A <span class="op">|</span> B</span>
@@ -453,7 +453,7 @@ Multi-Family      31</code></pre>
 </section>
 <section id="train-test-split" class="level1" data-number="5">
 <h1 data-number="5"><span class="header-section-number">5</span> Train / Test Split</h1>
-<div id="train_test_split" class="cell" data-execution_count="8">
+<div id="train_test_split" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>X_train, X_test, y_train, y_test <span class="op">=</span> train_test_split(</span>
@@ -480,7 +480,7 @@ Test  :  2193 rows</code></pre>
 <section id="feature-engineering-helpers" class="level1" data-number="6">
 <h1 data-number="6"><span class="header-section-number">6</span> Feature-Engineering Helpers</h1>
 <p>To keep the later chunks short, we define a helper that builds the <strong>polynomial + segment-interaction</strong> feature set on top of the base matrix. Four continuous variables get a squared term; each <code>segment_*</code> dummy gets multiplied by the six key numeric predictors.</p>
-<div id="feature_builder" class="cell" data-execution_count="9">
+<div id="feature_builder" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>POLY_COLS   <span class="op">=</span> [<span class="st">'ln_GLA'</span>, <span class="st">'Quality_Weighted'</span>, <span class="st">'EffYearBuilt_Weighted'</span>, <span class="st">'AsinH_Acreage'</span>]</span>
@@ -532,7 +532,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </div>
 </div>
 <p>And a shared results registry plus a small helper to run diagnostics on any residual vector:</p>
-<div id="results_registry" class="cell" data-execution_count="10">
+<div id="results_registry" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>results <span class="op">=</span> []</span>
@@ -560,7 +560,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <h1 data-number="7"><span class="header-section-number">7</span> OLS Variants</h1>
 <section id="ols-v1-baseline" class="level2" data-number="7.1">
 <h2 data-number="7.1" class="anchored" data-anchor-id="ols-v1-baseline"><span class="header-section-number">7.1</span> OLS v1 — Baseline</h2>
-<div id="ols_v1" class="cell" data-execution_count="11">
+<div id="ols_v1" class="cell" data-execution_count="10">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>Xc_tr <span class="op">=</span> sm.add_constant(X_train, has_constant<span class="op">=</span><span class="st">'add'</span>)</span>
@@ -611,7 +611,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
   Resid skew / kurt: -0.066 / 2.114</code></pre>
 </div>
 </div>
-<div id="cell-ols_v1_diagnostics" class="cell" data-execution_count="12">
+<div id="cell-ols_v1_diagnostics" class="cell" data-execution_count="11">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">2</span>, <span class="dv">3</span>, figsize<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">10</span>))</span>
@@ -654,7 +654,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="Model%20Building%203_files/figure-html/ols_v1_diagnostics-output-1.png" id="ols_v1_diagnostics" width="1525" height="944" class="figure-img"></p>
+<p><img src="Model%20Building%203_files/figure-html/ols_v1_diagnostics-output-1.png" id="ols_v1_diagnostics" width="1526" height="946" class="figure-img"></p>
 </figure>
 </div>
 </div>
@@ -664,7 +664,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <section id="ols-v2-polynomial-terms" class="level2" data-number="7.2">
 <h2 data-number="7.2" class="anchored" data-anchor-id="ols-v2-polynomial-terms"><span class="header-section-number">7.2</span> OLS v2 — Polynomial Terms</h2>
 <p>Squared terms on <code>ln_GLA</code>, <code>Quality_Weighted</code>, <code>EffYearBuilt_Weighted</code>, and <code>AsinH_Acreage</code>.</p>
-<div id="ols_v2" class="cell" data-execution_count="13">
+<div id="ols_v2" class="cell" data-execution_count="12">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>Xc_tr <span class="op">=</span> sm.add_constant(X_train_v2, has_constant<span class="op">=</span><span class="st">'add'</span>)</span>
@@ -702,7 +702,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="ols-v3-segment-numeric-interactions" class="level2" data-number="7.3">
 <h2 data-number="7.3" class="anchored" data-anchor-id="ols-v3-segment-numeric-interactions"><span class="header-section-number">7.3</span> OLS v3 — Segment × Numeric Interactions</h2>
-<div id="ols_v3" class="cell" data-execution_count="14">
+<div id="ols_v3" class="cell" data-execution_count="13">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>Xc_tr <span class="op">=</span> sm.add_constant(X_train_v3, has_constant<span class="op">=</span><span class="st">'add'</span>)</span>
@@ -740,7 +740,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="ols-v4-polynomial-interactions" class="level2" data-number="7.4">
 <h2 data-number="7.4" class="anchored" data-anchor-id="ols-v4-polynomial-interactions"><span class="header-section-number">7.4</span> OLS v4 — Polynomial + Interactions</h2>
-<div id="ols_v4" class="cell" data-execution_count="15">
+<div id="ols_v4" class="cell" data-execution_count="14">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>Xc_tr <span class="op">=</span> sm.add_constant(X_train_v4, has_constant<span class="op">=</span><span class="st">'add'</span>)</span>
@@ -781,7 +781,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <section id="shrinkage-methods" class="level1" data-number="8">
 <h1 data-number="8"><span class="header-section-number">8</span> Shrinkage Methods</h1>
 <p>All shrinkage fits are on standardized predictors. We tune α (and the L1 ratio for ElasticNet) on the train fold via 5-fold CV.</p>
-<div id="scale_for_shrinkage" class="cell" data-execution_count="16">
+<div id="scale_for_shrinkage" class="cell" data-execution_count="15">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>scaler_base <span class="op">=</span> StandardScaler()</span>
@@ -795,7 +795,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </div>
 <section id="ridge" class="level2" data-number="8.1">
 <h2 data-number="8.1" class="anchored" data-anchor-id="ridge"><span class="header-section-number">8.1</span> Ridge</h2>
-<div id="ridge_models" class="cell" data-execution_count="17">
+<div id="ridge_models" class="cell" data-execution_count="16">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> best_ridge(Xtr, Xte, label):</span>
@@ -844,7 +844,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="lasso" class="level2" data-number="8.2">
 <h2 data-number="8.2" class="anchored" data-anchor-id="lasso"><span class="header-section-number">8.2</span> Lasso</h2>
-<div id="lasso_models" class="cell" data-execution_count="18">
+<div id="lasso_models" class="cell" data-execution_count="17">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> best_lasso(Xtr, Xte, label):</span>
@@ -894,7 +894,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="elasticnet" class="level2" data-number="8.3">
 <h2 data-number="8.3" class="anchored" data-anchor-id="elasticnet"><span class="header-section-number">8.3</span> ElasticNet</h2>
-<div id="elasticnet_models" class="cell" data-execution_count="19">
+<div id="elasticnet_models" class="cell" data-execution_count="18">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> best_en(Xtr, Xte, label):</span>
@@ -951,7 +951,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <li>the textbook diagnostic machinery (AIC, BIC, Breusch-Pagan, etc.).</li>
 </ul>
 <p>This is a classic two-stage selection pipeline — Lasso for feature identification, OLS for interpretation.</p>
-<div id="lasso_then_ols" class="cell" data-execution_count="20">
+<div id="lasso_then_ols" class="cell" data-execution_count="19">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> lasso_then_ols(Xtr_s_arr, Xte_s_arr, Xtr_df, Xte_df, lasso_model, label):</span>
@@ -1020,7 +1020,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <h1 data-number="10"><span class="header-section-number">10</span> Robust Methods</h1>
 <section id="huber" class="level2" data-number="10.1">
 <h2 data-number="10.1" class="anchored" data-anchor-id="huber"><span class="header-section-number">10.1</span> Huber</h2>
-<div id="huber" class="cell" data-execution_count="21">
+<div id="huber" class="cell" data-execution_count="20">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_huber(Xtr, Xte, label):</span>
@@ -1055,7 +1055,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="wls-variance-structure-weights" class="level2" data-number="10.2">
 <h2 data-number="10.2" class="anchored" data-anchor-id="wls-variance-structure-weights"><span class="header-section-number">10.2</span> WLS (Variance-Structure Weights)</h2>
-<div id="wls" class="cell" data-execution_count="22">
+<div id="wls" class="cell" data-execution_count="21">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_wls(X_in_tr, X_in_te, label):</span>
@@ -1105,7 +1105,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="quantile-median-regression" class="level2" data-number="10.3">
 <h2 data-number="10.3" class="anchored" data-anchor-id="quantile-median-regression"><span class="header-section-number">10.3</span> Quantile (Median) Regression</h2>
-<div id="quantile" class="cell" data-execution_count="23">
+<div id="quantile" class="cell" data-execution_count="22">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>Xc_tr <span class="op">=</span> sm.add_constant(X_train, has_constant<span class="op">=</span><span class="st">'add'</span>)</span>
@@ -1139,7 +1139,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <h1 data-number="11"><span class="header-section-number">11</span> Dimension Reduction</h1>
 <section id="principal-component-regression-pcr" class="level2" data-number="11.1">
 <h2 data-number="11.1" class="anchored" data-anchor-id="principal-component-regression-pcr"><span class="header-section-number">11.1</span> Principal Component Regression (PCR)</h2>
-<div id="pcr" class="cell" data-execution_count="24">
+<div id="pcr" class="cell" data-execution_count="23">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>pca <span class="op">=</span> PCA(random_state<span class="op">=</span>RANDOM_STATE).fit(Xtr_s)</span>
@@ -1182,7 +1182,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="partial-least-squares-pls" class="level2" data-number="11.2">
 <h2 data-number="11.2" class="anchored" data-anchor-id="partial-least-squares-pls"><span class="header-section-number">11.2</span> Partial Least Squares (PLS)</h2>
-<div id="pls" class="cell" data-execution_count="25">
+<div id="pls" class="cell" data-execution_count="24">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>best <span class="op">=</span> <span class="va">None</span></span>
@@ -1223,7 +1223,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 <section id="segment-stratified-ols" class="level1" data-number="12">
 <h1 data-number="12"><span class="header-section-number">12</span> Segment-Stratified OLS</h1>
 <p>Fit one OLS per segment (Residential / Land Sales / Multi-Family) and glue the predictions back together. This gives each segment its own intercept <em>and</em> slopes — maximum flexibility, but far more parameters than the data can support in the tiny Multi-Family segment.</p>
-<div id="segment_stratified" class="cell" data-execution_count="26">
+<div id="segment_stratified" class="cell" data-execution_count="25">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>yhat_train <span class="op">=</span> np.full(<span class="bu">len</span>(y_train), np.nan)</span>
@@ -1272,7 +1272,7 @@ v4 (poly + seg×num) : 95 features</code></pre>
 </section>
 <section id="overall-comparison" class="level1" data-number="13">
 <h1 data-number="13"><span class="header-section-number">13</span> Overall Comparison</h1>
-<div id="final_comparison" class="cell" data-execution_count="27">
+<div id="final_comparison" class="cell" data-execution_count="26">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>cols <span class="op">=</span> [<span class="st">'model'</span>, <span class="st">'r2_train'</span>, <span class="st">'r2_test'</span>, <span class="st">'cv_r2'</span>, <span class="st">'cv_std'</span>,</span>
@@ -1322,7 +1322,7 @@ ElasticNet (poly+seg×num)    0.8687   0.8664  0.0023    NaN     NaN 95.0000    
    Segment-stratified OLS    0.8812   0.7288  0.1524    NaN     NaN 79.0000        NaN         NaN    NaN    NaN</code></pre>
 </div>
 </div>
-<div id="cell-ranking_plot" class="cell" data-execution_count="28">
+<div id="cell-ranking_plot" class="cell" data-execution_count="27">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">11</span>, <span class="dv">9</span>))</span>
@@ -1348,7 +1348,7 @@ ElasticNet (poly+seg×num)    0.8687   0.8664  0.0023    NaN     NaN 95.0000    
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="Model%20Building%203_files/figure-html/ranking_plot-output-1.png" id="ranking_plot" width="1046" height="852" class="figure-img"></p>
+<p><img src="Model%20Building%203_files/figure-html/ranking_plot-output-1.png" id="ranking_plot" width="1046" height="854" class="figure-img"></p>
 </figure>
 </div>
 </div>
@@ -1372,7 +1372,7 @@ ElasticNet (poly+seg×num)    0.8687   0.8664  0.0023    NaN     NaN 95.0000    
 <li><strong>34 features</strong> survive selection (from 95) — parsimonious.</li>
 <li>Fully interpretable: OLS coefficients with standard errors, t-statistics, and p-values.</li>
 </ul>
-<div id="winner_refit" class="cell" data-execution_count="29">
+<div id="winner_refit" class="cell" data-execution_count="28">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>sel_names <span class="op">=</span> X_train_v4.columns[np.where(lasso_v4.coef_ <span class="op">!=</span> <span class="dv">0</span>)[<span class="dv">0</span>]].tolist()</span>
@@ -1434,7 +1434,7 @@ ElasticNet (poly+seg×num)    0.8687   0.8664  0.0023    NaN     NaN 95.0000    
 </div>
 <section id="coefficient-table" class="level2" data-number="14.1">
 <h2 data-number="14.1" class="anchored" data-anchor-id="coefficient-table"><span class="header-section-number">14.1</span> Coefficient Table</h2>
-<div id="winner_coefs" class="cell" data-execution_count="30">
+<div id="winner_coefs" class="cell" data-execution_count="29">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>coef_df <span class="op">=</span> pd.DataFrame({</span>
@@ -1478,7 +1478,7 @@ Main_StyleDesc_End: One Story                         0.042114  0.006979   6.034
 </section>
 <section id="winner-diagnostics" class="level2" data-number="14.2">
 <h2 data-number="14.2" class="anchored" data-anchor-id="winner-diagnostics"><span class="header-section-number">14.2</span> Winner Diagnostics</h2>
-<div id="cell-winner_diagnostics" class="cell" data-execution_count="31">
+<div id="cell-winner_diagnostics" class="cell" data-execution_count="30">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">2</span>, <span class="dv">3</span>, figsize<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">10</span>))</span>
@@ -1521,7 +1521,7 @@ Main_StyleDesc_End: One Story                         0.042114  0.006979   6.034
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="Model%20Building%203_files/figure-html/winner_diagnostics-output-1.png" id="winner_diagnostics" width="1525" height="944" class="figure-img"></p>
+<p><img src="Model%20Building%203_files/figure-html/winner_diagnostics-output-1.png" id="winner_diagnostics" width="1526" height="946" class="figure-img"></p>
 </figure>
 </div>
 </div>
