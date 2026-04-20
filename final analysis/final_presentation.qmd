@@ -476,6 +476,34 @@ RS = 2026  # random-state seed used throughout
 plt.rcParams['figure.dpi'] = 110
 ```
 
+## Models Evaluated
+
+::: {.columns}
+
+::: {.column width="50%"}
+- **Linear Models**: 
+    - OLS
+    - Ridge
+    - Lasso
+    - Elastic Net
+    - Regularization + OLS
+    - Huber
+    - WLS
+    - Quantile (Median)
+    - PCR
+    - PLS
+    - GAM
+:::
+::: {.column width="50%"}
+- **Non-Linear Models**:
+    - Random Forest
+    - LightGBM
+    - XGBoost
+    - CatBoost
+
+:::
+:::
+
 ## Linear Model Preperation
 
 :::: {.columns}
@@ -1111,7 +1139,7 @@ def waterfall_context(idx, shap_vals, feature_names_map, X_data, n_top=10):
 
 ::: {.columns}
 
-::: {.column width="50%"}
+::: {.column .v-center width="70%"}
 
 ```{python}
 #| label: nl_pick_rows
@@ -1140,7 +1168,7 @@ shap.plots._waterfall.waterfall_legacy(
 
 # Grab whatever figure SHAP just made and resize it in place
 fig = plt.gcf()
-fig.set_size_inches(10, 6, forward=True)
+fig.set_size_inches(16, 6, forward=True)
 
 plt.suptitle("Waterfall — median-priced residential", y=1.02)
 plt.tight_layout()
@@ -1149,12 +1177,12 @@ plt.show()
 
 :::
 
-::: {.column width="50%"}
+::: {.column .v-center width="30%"}
 
 ```{python}
 #| label: nl_waterfall_context_median
 
-waterfall_context(med_res_idx, sv_test, ORIG_OF, X_test, n_top=10)
+waterfall_context(med_res_idx, sv_test, ORIG_OF, X_test, n_top=14)
 ```
 
 :::
@@ -1164,7 +1192,7 @@ waterfall_context(med_res_idx, sv_test, ORIG_OF, X_test, n_top=10)
 
 ::: {.columns}
 
-::: {.column width="50%"}
+::: {.column width="70%"}
 
 ```{python}
 #| label: nl_waterfall_luxury
@@ -1187,7 +1215,7 @@ shap.plots._waterfall.waterfall_legacy(
 )
 
 fig = plt.gcf()
-fig.set_size_inches(10, 6, forward=True)
+fig.set_size_inches(16, 6, forward=True)
 
 plt.suptitle("Waterfall — luxury residential", y=1.02)
 plt.tight_layout()
@@ -1196,10 +1224,10 @@ plt.show()
 
 :::
 
-::: {.column width="50%"}
+::: {.column width="30%"}
 
 ```{python}
-waterfall_context(lux_res_idx, sv_test, ORIG_OF, X_test, n_top=10)
+waterfall_context(lux_res_idx, sv_test, ORIG_OF, X_test, n_top=14)
 ```
 
 :::
