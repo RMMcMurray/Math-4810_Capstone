@@ -102,7 +102,6 @@ df_combined["Adj_Price"] = df_combined["Sold Price"] - df_combined["Concessions 
 df_combined["Sold Date"] = pd.to_datetime(df_combined["Sold Date"], errors="coerce")
 
 cols_to_drop = [
-    "List Number",
     "MainImp.GroupCode",
     "Res Imp Count",
     "ImpCode",
@@ -118,7 +117,6 @@ cols_to_drop = [
     "ImpOnly",
     "Active",
     "TaxYear",
-    "Parcel Number",
     "RecordType",
     "SpecificPropType",
     "Main_YearBuilt",
